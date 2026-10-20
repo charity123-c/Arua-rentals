@@ -1,0 +1,11 @@
+{
+  "name": "arua-city-finder-admin-tools",
+  "private": true,
+  "description": "Local Firebase Admin SDK utilities for Arua City Finder",
+  "scripts": {
+    "set-admin": "node set_admin.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.0"
+  }
+}

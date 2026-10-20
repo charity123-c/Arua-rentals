@@ -1,0 +1,229 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function validUserRole(role) {
+      return role in ['tenant', 'landlord', 'provider'];
+    }
+
+    function validRoleRequest(roleRequest) {
+      return roleRequest == null || roleRequest in ['landlord', 'provider'];
+    }
+
+    function validListingData(data) {
+      return data.ownerId is string
+        && data.ownerName is string
+        && data.ownerPhone is string
+        && data.type in ['property', 'service']
+        && data.category is string
+        && data.title is string
+        && data.title.size() > 0
+        && data.description is string
+        && data.priceUgx is int
+        && data.priceUgx > 0
+        && data.priceUnit in ['month', 'job', 'hour', 'fixed']
+        && data.area is string
+        && data.amenities is list
+        && data.imageUrls is list
+        && data.thumbnailUrl is string
+        && data.status in ['pending', 'approved', 'rejected']
+        && data.ratingAvg is number
+        && data.ratingCount is int
+        && data.searchKeywords is list
+        && data.isFeatured is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+
+      allow create: if isOwner(uid)
+        && request.resource.data.keys().hasOnly([
+          'name',
+          'email',
+          'phone',
+          'role',
+          'roleRequest',
+          'photoUrl',
+          'fcmTokens',
+          'isVerified',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.email is string
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.phone is string
+        && (
+          request.resource.data.phone == ''
+          || request.resource.data.phone.matches('^\\+256[0-9]{9}$')
+        )
+        && (
+          !('photoUrl' in request.resource.data)
+          || request.resource.data.photoUrl == null
+          || request.resource.data.photoUrl is string
+        )
+        && request.resource.data.fcmTokens is list
+        && request.resource.data.role == 'tenant'
+        && request.resource.data.isVerified == false
+        && validRoleRequest(request.resource.data.get('roleRequest', null))
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['role', 'isVerified', 'roleRequest', 'updatedAt'])
+        && request.resource.data.role in ['tenant', 'landlord', 'provider']
+        && validUserRole(request.resource.data.role)
+        && request.resource.data.isVerified is bool
+        && validRoleRequest(request.resource.data.get('roleRequest', null))
+        && (
+          !('updatedAt' in request.resource.data)
+          || request.resource.data.updatedAt is timestamp
+        )
+        || isOwner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['name', 'phone', 'photoUrl', 'fcmTokens', 'roleRequest'])
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.isVerified == resource.data.isVerified
+        && validRoleRequest(request.resource.data.get('roleRequest', null));
+
+    }
+
+    match /role_requests/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+
+      allow create: if isOwner(uid)
+        && request.resource.data.keys().hasOnly([
+          'uid',
+          'requestedRole',
+          'status',
+          'name',
+          'email',
+          'phone',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.uid == uid
+        && request.resource.data.requestedRole in ['landlord', 'provider']
+        && request.resource.data.status == 'pending'
+        && request.resource.data.name is string
+        && request.resource.data.email is string
+        && request.resource.data.phone is string
+        && request.resource.data.email == request.auth.token.email
+        && getAfter(userPath(uid)).data.role == 'tenant'
+        && getAfter(userPath(uid)).data.roleRequest
+          == request.resource.data.requestedRole
+        && getAfter(userPath(uid)).data.name == request.resource.data.name
+        && getAfter(userPath(uid)).data.email == request.resource.data.email
+        && getAfter(userPath(uid)).data.phone == request.resource.data.phone;
+
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'status',
+            'reviewedBy',
+            'reviewedAt',
+            'rejectionReason'
+          ])
+        && request.resource.data.status in ['approved', 'rejected']
+        && request.resource.data.reviewedBy == request.auth.uid
+        && (
+          request.resource.data.status != 'rejected'
+          || (
+            request.resource.data.rejectionReason is string
+            && request.resource.data.rejectionReason.size() > 0
+          )
+        );
+
+    }
+
+    match /listings/{listingId} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.ownerId == request.auth.uid)
+        || resource.data.status == 'approved';
+
+      allow create: if isAdmin()
+        || (
+          signedIn()
+          && request.resource.data.ownerId == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && get(userPath(request.auth.uid)).data.role
+            in ['landlord', 'provider']
+          && validListingData(request.resource.data)
+          && request.resource.data.ratingAvg == 0
+          && request.resource.data.ratingCount == 0
+          && request.resource.data.isFeatured == false
+        );
+
+      allow update: if isAdmin()
+        || (
+          signedIn()
+          && resource.data.ownerId == request.auth.uid
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.status == 'pending'
+          && request.resource.data.ratingAvg == resource.data.ratingAvg
+          && request.resource.data.ratingCount == resource.data.ratingCount
+          && request.resource.data.isFeatured == resource.data.isFeatured
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'ownerName',
+              'ownerPhone',
+              'type',
+              'category',
+              'title',
+              'titleLower',
+              'description',
+              'priceUgx',
+              'priceUnit',
+              'area',
+              'address',
+              'geo',
+              'bedrooms',
+              'bathrooms',
+              'amenities',
+              'imageUrls',
+              'thumbnailUrl',
+              'videoUrl',
+              'status',
+              'rejectionReason',
+              'searchKeywords',
+              'updatedAt'
+            ])
+          && validListingData(request.resource.data)
+        );
+
+      allow delete: if isAdmin()
+        || (signedIn() && resource.data.ownerId == request.auth.uid);
+    }
+
+    match /config/{documentId} {
+      allow read: if signedIn();
+      allow write: if isAdmin()
+        && documentId in ['categories', 'areas']
+        && request.resource.data.items is list
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

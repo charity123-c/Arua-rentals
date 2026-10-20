@@ -1,0 +1,64 @@
+abstract final class ListingCopy {
+  static const createTitle = 'Create listing';
+  static const editTitle = 'Edit listing';
+  static const title = 'Title';
+  static const description = 'Description';
+  static const category = 'Category';
+  static const area = 'Area';
+  static const type = 'Listing type';
+  static const property = 'Property';
+  static const service = 'Service';
+  static const price = 'Price in UGX';
+  static const priceUnit = 'Price unit';
+  static const bedrooms = 'Bedrooms';
+  static const bathrooms = 'Bathrooms';
+  static const amenities = 'Amenities';
+  static const addAmenity = 'Add amenity';
+  static const contactPhone = 'Contact phone';
+  static const imageUrls = 'Image URLs (one per line)';
+  static const ownerId = 'Owner user ID';
+  static const save = 'Save listing';
+  static const cancel = 'Cancel';
+  static const confirmDiscardTitle = 'Discard changes?';
+  static const confirmDiscardMessage =
+      'Your unsaved listing changes will be lost.';
+  static const required = 'This field is required.';
+  static const invalidPrice = 'Enter a whole-number price greater than zero.';
+  static const invalidCount = 'Enter a whole number greater than zero.';
+  static const invalidPhone = 'Enter a valid Ugandan phone number.';
+  static const invalidOwner = 'Enter the owner user ID.';
+  static const created = 'Listing created.';
+  static const updated = 'Listing updated.';
+  static const providerTitle = 'My listings';
+  static const noOwnListings = 'You have not created any listings yet.';
+  static const newListing = 'New listing';
+  static const edit = 'Edit';
+  static const delete = 'Delete';
+  static const deleteQuestion = 'Delete this listing?';
+  static const deleteWarning = 'This action cannot be undone.';
+  static const deleted = 'Listing deleted.';
+  static const statusLive = 'Live';
+  static const statusPending = 'Pending';
+  static const statusRejected = 'Rejected';
+  static const retry = 'Retry';
+  static const adminListings = 'Manage listings';
+  static const allStatuses = 'All statuses';
+  static const searchListings = 'Search listings';
+  static const adminCreateApproved =
+      'Listings created by an administrator are approved immediately.';
+  static const noListings = 'No listings found.';
+  static const previousPage = 'Previous';
+  static const nextPage = 'Next';
+  static const approve = 'Approve';
+  static const reject = 'Reject';
+  static const approvalQuestion = 'Approve this listing?';
+  static const rejectionTitle = 'Reject listing';
+  static const rejectionReason = 'Reason for rejection';
+  static const rejectionReasonRequired = 'Enter a reason before continuing.';
+  static const confirm = 'Confirm';
+  static const listingApproved = 'Listing approved.';
+  static const listingRejected = 'Listing rejected.';
+  static const moderationReason = 'Rejection reason';
+  static const imageUrlHelp =
+      'Image upload uses URLs temporarily. Storage upload will be added after Blaze is enabled.';
+}

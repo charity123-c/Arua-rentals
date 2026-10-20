@@ -1,0 +1,35 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8080
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "arua-city-finder",
+          "appId": "1:403894489039:android:ab4f1af6b248eb87c14cba",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "arua-city-finder",
+          "configurations": {
+            "android": "1:403894489039:android:ab4f1af6b248eb87c14cba",
+            "web": "1:403894489039:web:0ae885509e158710c14cba"
+          }
+        }
+      }
+    }
+  }
+}

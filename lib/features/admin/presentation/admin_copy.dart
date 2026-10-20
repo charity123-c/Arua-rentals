@@ -1,0 +1,60 @@
+abstract final class AdminCopy {
+  static const title = 'Admin dashboard';
+  static const overview = 'Overview';
+  static const roleRequests = 'Role requests';
+  static const users = 'Users';
+  static const listings = 'Listings';
+  static const logout = 'Log out';
+  static const retry = 'Retry';
+  static const noRoleRequests = 'There are no pending role requests.';
+  static const noListings = 'There are no listings awaiting review.';
+  static const noUsers = 'No users found.';
+  static const approve = 'Approve';
+  static const reject = 'Reject';
+  static const cancel = 'Cancel';
+  static const confirm = 'Confirm';
+  static const verify = 'Verified';
+  static const verified = 'Verified';
+  static const unverified = 'Not verified';
+  static const changeRole = 'Change role';
+  static const editProfile = 'Edit profile';
+  static const deleteProfile = 'Delete profile';
+  static const profileUpdated = 'Update this profile?';
+  static const deleteProfileQuestion = 'Delete this user profile?';
+  static const deleteProfileWarning =
+      'This removes the Firestore profile only. The sign-in account will remain active.';
+  static const profileSaved = 'User profile updated.';
+  static const profileDeleted = 'User profile deleted.';
+  static const invalidProfile = 'Enter a name and valid Ugandan phone number.';
+  static const roleManagedByBootstrap = 'Admin role is bootstrap-managed';
+  static const name = 'Name';
+  static const phone = 'Phone';
+  static const role = 'Role';
+  static const emailAndPhone = 'Email / phone';
+  static const actions = 'Actions';
+  static const requestedRoleLabel = 'Requested role';
+  static const searchUsers = 'Search by name or email';
+  static const clearSearch = 'Clear search';
+  static const accessDenied = 'Access denied';
+  static const accessDeniedMessage =
+      'You do not have permission to access this page.';
+  static const approvalQuestion = 'Approve this request?';
+  static const rejectionTitle = 'Reject request';
+  static const rejectionReason = 'Reason for rejection';
+  static const rejectionReasonRequired = 'Enter a reason before continuing.';
+  static const roleUpdated = 'Change this user’s role?';
+  static const verificationUpdated = 'Change this user’s verification status?';
+  static const previousPage = 'Previous page';
+  static const nextPage = 'Next page';
+  static const totalUsers = 'Total users';
+  static const pendingRequests = 'Pending role requests';
+  static const pendingListings = 'Pending listings';
+  static const approvedListings = 'Approved listings';
+  static const rejectedListings = 'Rejected listings';
+  static const phoneUnavailable = 'Phone not provided';
+  static const unknownDate = 'Date unavailable';
+  static const adminDataError =
+      'The admin data could not be loaded. Try again.';
+  static const queueError = 'Unable to load this admin queue. Try again.';
+  static const usersError = 'Unable to load users. Try again.';
+}
