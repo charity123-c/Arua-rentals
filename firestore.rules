@@ -87,24 +87,31 @@ service cloud.firestore {
         && request.resource.data.createdAt is timestamp
         && request.resource.data.updatedAt is timestamp;
 
-      allow update: if isAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['role', 'isVerified', 'roleRequest', 'updatedAt'])
-        && request.resource.data.role in ['tenant', 'landlord', 'provider']
-        && validUserRole(request.resource.data.role)
-        && request.resource.data.isVerified is bool
-        && validRoleRequest(request.resource.data.get('roleRequest', null))
-        && (
-          !('updatedAt' in request.resource.data)
-          || request.resource.data.updatedAt is timestamp
-        )
-        || isOwner(uid)
+      allow update: if isOwner(uid)
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['name', 'phone', 'photoUrl', 'fcmTokens', 'roleRequest'])
         && request.resource.data.role == resource.data.role
         && request.resource.data.isVerified == resource.data.isVerified
-        && validRoleRequest(request.resource.data.get('roleRequest', null));
-
+        && validRoleRequest(request.resource.data.get('roleRequest', null))
+        || isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['role', 'isVerified', 'name', 'phone'])
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
+          || validUserRole(request.resource.data.role)
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isVerified'])
+          || request.resource.data.isVerified is bool
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['name'])
+          || request.resource.data.name is string
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['phone'])
+          || request.resource.data.phone is string
+        );
     }
 
     match /role_requests/{uid} {
@@ -137,51 +144,48 @@ service cloud.firestore {
 
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly([
-            'status',
-            'reviewedBy',
-            'reviewedAt',
-            'rejectionReason'
-          ])
+          .hasOnly(['status', 'reviewedBy', 'reviewedAt', 'reason'])
         && request.resource.data.status in ['approved', 'rejected']
         && request.resource.data.reviewedBy == request.auth.uid
+        && request.resource.data.reviewedAt is timestamp
         && (
-          request.resource.data.status != 'rejected'
-          || (
-            request.resource.data.rejectionReason is string
-            && request.resource.data.rejectionReason.size() > 0
-          )
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['reason'])
+          || request.resource.data.reason is string
         );
-
     }
 
     match /listings/{listingId} {
       allow read: if isAdmin()
-        || (signedIn() && resource.data.ownerId == request.auth.uid)
-        || resource.data.status == 'approved';
+        || (signedIn() && resource.data.status == 'approved')
+        || (signedIn() && resource.data.ownerId == request.auth.uid);
 
-      allow create: if isAdmin()
-        || (
-          signedIn()
-          && request.resource.data.ownerId == request.auth.uid
-          && request.resource.data.status == 'pending'
-          && get(userPath(request.auth.uid)).data.role
-            in ['landlord', 'provider']
-          && validListingData(request.resource.data)
-          && request.resource.data.ratingAvg == 0
-          && request.resource.data.ratingCount == 0
-          && request.resource.data.isFeatured == false
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && (
+          (
+            request.resource.data.status == 'pending'
+            && (
+              isAdmin()
+              || get(userPath(request.auth.uid)).data.role in ['landlord', 'provider']
+            )
+          )
+          || (request.resource.data.status == 'approved' && isAdmin())
+        )
+        && validListingData(request.resource.data)
+        && (
+          isAdmin()
+          || (
+            request.resource.data.ratingAvg == 0
+            && request.resource.data.ratingCount == 0
+            && request.resource.data.isFeatured == false
+          )
         );
 
       allow update: if isAdmin()
         || (
-          signedIn()
-          && resource.data.ownerId == request.auth.uid
+          isOwner(resource.data.ownerId)
           && request.resource.data.ownerId == resource.data.ownerId
           && request.resource.data.status == 'pending'
-          && request.resource.data.ratingAvg == resource.data.ratingAvg
-          && request.resource.data.ratingCount == resource.data.ratingCount
-          && request.resource.data.isFeatured == resource.data.isFeatured
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly([
               'ownerName',
@@ -203,23 +207,18 @@ service cloud.firestore {
               'thumbnailUrl',
               'videoUrl',
               'status',
-              'rejectionReason',
               'searchKeywords',
               'updatedAt'
             ])
           && validListingData(request.resource.data)
         );
 
-      allow delete: if isAdmin()
-        || (signedIn() && resource.data.ownerId == request.auth.uid);
+      allow delete: if isAdmin() || isOwner(resource.data.ownerId);
     }
 
     match /config/{documentId} {
       allow read: if signedIn();
-      allow write: if isAdmin()
-        && documentId in ['categories', 'areas']
-        && request.resource.data.items is list
-        && request.resource.data.updatedAt is timestamp;
+      allow write: if isAdmin();
     }
 
     match /{document=**} {
