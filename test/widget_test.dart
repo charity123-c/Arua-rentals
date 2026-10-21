@@ -11,6 +11,13 @@ import 'package:arua_rentals/features/auth/data/auth_repository.dart';
 import 'package:arua_rentals/features/auth/presentation/auth_providers.dart';
 import 'package:arua_rentals/features/auth/presentation/login_screen.dart';
 import 'package:arua_rentals/features/auth/presentation/register_screen.dart';
+import 'package:arua_rentals/features/listings/data/app_config.dart';
+import 'package:arua_rentals/features/listings/data/listing.dart';
+import 'package:arua_rentals/features/listings/data/listings_repository.dart';
+import 'package:arua_rentals/features/listings/presentation/app_config_providers.dart';
+import 'package:arua_rentals/features/listings/presentation/listing_detail_screen.dart';
+import 'package:arua_rentals/features/listings/presentation/public_listings_screen.dart';
+import 'package:arua_rentals/features/listings/presentation/listings_browse_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -63,6 +70,12 @@ void main() {
     container = ProviderContainer(
       overrides: [
         authRepositoryProvider.overrideWithValue(_UnauthenticatedRepository()),
+        appConfigProvider.overrideWith(
+          (ref) async => const AppConfig(categories: [], areas: []),
+        ),
+        featuredListingsProvider.overrideWith((ref) async => []),
+        listingsBrowseProvider.overrideWith(_EmptyBrowseController.new),
+        listingDetailProvider.overrideWith((ref, id) async => _testListing(id)),
       ],
     );
   });
@@ -71,7 +84,9 @@ void main() {
     container.dispose();
   });
 
-  testWidgets('unauthenticated visitors are sent to login', (tester) async {
+  testWidgets('unauthenticated visitors can browse the public home', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
@@ -80,8 +95,26 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(find.byType(PublicListingsScreen), findsOneWidget);
     expect(find.text('Arua City Finder'), findsOneWidget);
+  });
+
+  testWidgets('signed-out visitors can open a shared listing link', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const AruaCityFinderApp(),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    container.read(appRouterProvider).go('/listing/public-listing');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byType(ListingDetailScreen), findsOneWidget);
+    expect(find.text('Test listing'), findsWidgets);
   });
 
   testWidgets('protected provider route redirects to login', (tester) async {
@@ -109,7 +142,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Create an account'));
+    await tester.tap(find.text('Register'));
     await tester.pumpAndSettle();
 
     expect(find.byType(RegisterScreen), findsOneWidget);
@@ -178,6 +211,12 @@ ProviderContainer _signedInContainer(AppUser user) => ProviderContainer(
   overrides: [
     authStateProvider.overrideWith((ref) => Stream.value(_TestAuthUser())),
     currentAppUserProvider.overrideWith((ref) async => user),
+    appConfigProvider.overrideWith(
+      (ref) async => const AppConfig(categories: [], areas: []),
+    ),
+    featuredListingsProvider.overrideWith((ref) async => []),
+    listingsBrowseProvider.overrideWith(_EmptyBrowseController.new),
+    listingDetailProvider.overrideWith((ref, id) async => _testListing(id)),
     adminDashboardStatsProvider.overrideWith(
       (ref) async => const AdminDashboardStats(
         totalUsers: 1,
@@ -188,4 +227,38 @@ ProviderContainer _signedInContainer(AppUser user) => ProviderContainer(
       ),
     ),
   ],
+);
+
+class _EmptyBrowseController extends ListingsBrowseController {
+  @override
+  Future<ListingsBrowseState> build() async => const ListingsBrowseState(
+    items: [],
+    category: null,
+    area: null,
+    keyword: null,
+    sort: ListingSort.newest,
+    hasMore: false,
+  );
+}
+
+Listing _testListing(String id) => Listing(
+  id: id,
+  ownerId: 'owner-id',
+  ownerName: 'Listing owner',
+  ownerPhone: '+256701234567',
+  type: ListingType.property,
+  category: 'Rentals',
+  title: 'Test listing',
+  description: 'A test listing.',
+  priceUgx: 350000,
+  priceUnit: ListingPriceUnit.month,
+  area: 'Oli',
+  amenities: const [],
+  imageUrls: const [],
+  thumbnailUrl: 'https://example.test/listing.jpg',
+  searchKeywords: const [],
+  status: ListingStatus.approved,
+  ratingAvg: 0,
+  ratingCount: 0,
+  isFeatured: false,
 );

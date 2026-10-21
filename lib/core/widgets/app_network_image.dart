@@ -1,6 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import 'shimmer_box.dart';
+
 class AppNetworkImage extends StatelessWidget {
   const AppNetworkImage({
     required this.imageUrl,
@@ -27,7 +29,7 @@ class AppNetworkImage extends StatelessWidget {
         width: width,
         height: height,
         fit: fit,
-        placeholder: (context, url) => _imageFallback(context),
+        placeholder: (context, url) => ShimmerBox(width: width, height: height),
         errorWidget: (context, url, error) => _imageFallback(context),
       ),
     );

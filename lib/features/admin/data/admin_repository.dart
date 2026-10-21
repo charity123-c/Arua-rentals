@@ -223,10 +223,30 @@ class AdminRepository {
 
   Future<void> setUserVerified(String uid, bool isVerified) async {
     try {
-      await _users.doc(uid).update({
-        'isVerified': isVerified,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      final listingSnapshots = await _listings
+          .where('ownerId', isEqualTo: uid)
+          .get();
+      final documents = listingSnapshots.docs;
+      var offset = 0;
+      do {
+        final batch = _firestore.batch();
+        var writeCount = 0;
+        if (offset == 0) {
+          batch.update(_users.doc(uid), {
+            'isVerified': isVerified,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          writeCount++;
+        }
+        final batchEnd = (offset + 400 - writeCount).clamp(0, documents.length);
+        for (; offset < batchEnd; offset++) {
+          batch.update(documents[offset].reference, {
+            'ownerVerified': isVerified,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+        await batch.commit();
+      } while (offset < documents.length);
     } on FirebaseException catch (error) {
       throw mapFirestoreException(error);
     }

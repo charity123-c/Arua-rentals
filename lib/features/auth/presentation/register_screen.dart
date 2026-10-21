@@ -196,7 +196,19 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         : const Text('Create account'),
                   ),
                   TextButton(
-                    onPressed: () => context.go('/login'),
+                    onPressed: () {
+                      final redirect = GoRouterState.of(
+                        context,
+                      ).uri.queryParameters['redirect'];
+                      context.go(
+                        Uri(
+                          path: '/login',
+                          queryParameters: redirect == null
+                              ? null
+                              : {'redirect': redirect},
+                        ).toString(),
+                      );
+                    },
                     child: const Text('Already have an account? Log in'),
                   ),
                 ],

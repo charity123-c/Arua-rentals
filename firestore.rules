@@ -46,6 +46,7 @@ service cloud.firestore {
         && data.ratingCount is int
         && data.searchKeywords is list
         && data.isFeatured is bool
+        && data.ownerVerified is bool
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -95,7 +96,14 @@ service cloud.firestore {
         && validRoleRequest(request.resource.data.get('roleRequest', null))
         || isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['role', 'isVerified', 'name', 'phone'])
+          .hasOnly([
+            'role',
+            'isVerified',
+            'name',
+            'phone',
+            'roleRequest',
+            'updatedAt'
+          ])
         && (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
           || validUserRole(request.resource.data.role)
@@ -111,6 +119,16 @@ service cloud.firestore {
         && (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['phone'])
           || request.resource.data.phone is string
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['roleRequest'])
+          || validRoleRequest(request.resource.data.get('roleRequest', null))
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['updatedAt'])
+          || request.resource.data.updatedAt is timestamp
         );
     }
 
@@ -144,19 +162,30 @@ service cloud.firestore {
 
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'reviewedBy', 'reviewedAt', 'reason'])
+          .hasOnly([
+            'status',
+            'reviewedBy',
+            'reviewedAt',
+            'reason',
+            'rejectionReason'
+          ])
         && request.resource.data.status in ['approved', 'rejected']
         && request.resource.data.reviewedBy == request.auth.uid
         && request.resource.data.reviewedAt is timestamp
         && (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['reason'])
           || request.resource.data.reason is string
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['rejectionReason'])
+          || request.resource.data.rejectionReason is string
         );
     }
 
     match /listings/{listingId} {
       allow read: if isAdmin()
-        || (signedIn() && resource.data.status == 'approved')
+        || resource.data.status == 'approved'
         || (signedIn() && resource.data.ownerId == request.auth.uid);
 
       allow create: if signedIn()
@@ -172,6 +201,11 @@ service cloud.firestore {
           || (request.resource.data.status == 'approved' && isAdmin())
         )
         && validListingData(request.resource.data)
+        && (
+          isAdmin()
+          || request.resource.data.ownerVerified
+            == get(userPath(request.auth.uid)).data.isVerified
+        )
         && (
           isAdmin()
           || (
@@ -217,7 +251,7 @@ service cloud.firestore {
     }
 
     match /config/{documentId} {
-      allow read: if signedIn();
+      allow read: if true;
       allow write: if isAdmin();
     }
 

@@ -4,32 +4,37 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/ugx_formatter.dart';
 import '../../../core/errors/app_exception.dart';
-import '../../../core/widgets/empty_view.dart';
-import '../../../core/widgets/error_view.dart';
-import '../../../core/widgets/loading_view.dart';
+import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/admin_widgets.dart';
+import '../../../core/widgets/app_network_image.dart';
 import '../data/listing.dart';
 import '../data/listings_repository.dart';
 import 'listing_copy.dart';
 import 'listing_form_screen.dart';
 import 'listings_providers.dart';
+import '../../admin/presentation/admin_copy.dart';
 
 class AdminListingsScreen extends ConsumerStatefulWidget {
   const AdminListingsScreen({super.key});
 
   @override
-  ConsumerState<AdminListingsScreen> createState() => _AdminListingsScreenState();
+  ConsumerState<AdminListingsScreen> createState() =>
+      _AdminListingsScreenState();
 }
 
 class _AdminListingsScreenState extends ConsumerState<AdminListingsScreen> {
   static const _pageSize = 20;
   final _searchController = TextEditingController();
-  final _cursors = <DocumentSnapshot<Map<String, dynamic>>?>[null];
   late Future<ListingPage> _pageFuture;
+  final _loadedListings = <Listing>[];
   Timer? _debounce;
   ListingStatus? _status;
   String _keyword = '';
-  int _pageIndex = 0;
+  DocumentSnapshot<Map<String, dynamic>>? _nextCursor;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
   String? _busyId;
 
   @override
@@ -46,11 +51,16 @@ class _AdminListingsScreenState extends ConsumerState<AdminListingsScreen> {
   }
 
   void _loadPage() {
-    _pageFuture = ref.read(listingsRepositoryProvider).getAdminListings(
-      status: _status,
-      keyword: _keyword,
-      startAfter: _cursors[_pageIndex],
-    );
+    _pageFuture = ref
+        .read(listingsRepositoryProvider)
+        .getAdminListings(status: _status, keyword: _keyword);
+  }
+
+  void _resetPages() {
+    _loadedListings.clear();
+    _nextCursor = null;
+    _hasMore = true;
+    _loadPage();
   }
 
   void _onSearch(String value) {
@@ -62,14 +72,6 @@ class _AdminListingsScreenState extends ConsumerState<AdminListingsScreen> {
         _resetPages();
       });
     });
-  }
-
-  void _resetPages() {
-    _pageIndex = 0;
-    _cursors
-      ..clear()
-      ..add(null);
-    _loadPage();
   }
 
   Future<void> _refresh() async {
@@ -84,58 +86,54 @@ class _AdminListingsScreenState extends ConsumerState<AdminListingsScreen> {
   @override
   Widget build(BuildContext context) => Column(
     children: [
-      Padding(
-        padding: const EdgeInsets.all(16),
-        child: Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SizedBox(
-              width: 280,
-              child: TextField(
-                controller: _searchController,
-                onChanged: _onSearch,
-                decoration: const InputDecoration(
-                  labelText: ListingCopy.searchListings,
-                  prefixIcon: Icon(Icons.search),
-                  border: OutlineInputBorder(),
+      const AdminPageHeader(
+        title: AdminCopy.listings,
+        subtitle: AdminCopy.listingsSubtitle,
+      ),
+      AdminFilterBar(
+        controller: _searchController,
+        searchLabel: ListingCopy.searchListings,
+        onSearchChanged: _onSearch,
+        clearSearchLabel: AdminCopy.clearSearch,
+        onClear: () {
+          _searchController.clear();
+          _onSearch('');
+        },
+        filters: [
+          Wrap(
+            spacing: AppSpacing.xs,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xs,
+                  vertical: AppSpacing.md,
+                ),
+                child: Text(
+                  AdminCopy.status,
+                  style: Theme.of(context).textTheme.labelLarge,
                 ),
               ),
-            ),
-            SizedBox(
-              width: 190,
-              child: DropdownButtonFormField<ListingStatus?>(
-                initialValue: _status,
-                decoration: const InputDecoration(
-                  labelText: ListingCopy.allStatuses,
-                  border: OutlineInputBorder(),
-                ),
-                items: [
-                  const DropdownMenuItem<ListingStatus?>(
-                    value: null,
-                    child: Text(ListingCopy.allStatuses),
-                  ),
-                  for (final status in ListingStatus.values)
-                    DropdownMenuItem<ListingStatus?>(
-                      value: status,
-                      child: Text(status.name),
-                    ),
-                ],
-                onChanged: (value) => setState(() {
-                  _status = value;
-                  _resetPages();
-                }),
+              ChoiceChip(
+                label: const Text(ListingCopy.allStatuses),
+                selected: _status == null,
+                onSelected: (_) => _setStatus(null),
               ),
-            ),
-            FilledButton.icon(
-              onPressed: _openForm,
-              icon: const Icon(Icons.add),
-              label: const Text(ListingCopy.createTitle),
-            ),
-          ],
+              for (final status in ListingStatus.values)
+                ChoiceChip(
+                  label: Text(_statusLabel(status)),
+                  selected: _status == status,
+                  onSelected: (_) => _setStatus(status),
+                ),
+            ],
+          ),
+        ],
+        action: FilledButton.icon(
+          onPressed: _openForm,
+          icon: const Icon(Icons.add),
+          label: const Text(ListingCopy.createTitle),
         ),
       ),
+      const SizedBox(height: AppSpacing.md),
       Expanded(
         child: RefreshIndicator(
           onRefresh: _refresh,
@@ -143,34 +141,34 @@ class _AdminListingsScreenState extends ConsumerState<AdminListingsScreen> {
             future: _pageFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return ListView(
-                  physics: AlwaysScrollableScrollPhysics(),
-                  children: [SizedBox(height: 280, child: LoadingView())],
-                );
+                return const AdminLoadingList(itemCount: 5);
               }
               if (snapshot.hasError) {
                 return ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   children: [
                     SizedBox(
-                      height: 280,
-                      child: ErrorView(
+                      height: AppLayout.statePlaceholderHeight,
+                      child: AdminErrorState(
                         message: _errorMessage(snapshot.error),
                         retryLabel: ListingCopy.retry,
-                        onRetry: () => setState(_loadPage),
+                        onRetry: () => setState(_resetPages),
                       ),
                     ),
                   ],
                 );
               }
               final page = snapshot.data!;
-              if (page.items.isEmpty) {
+              final listings = _loadedListings.isEmpty
+                  ? page.items
+                  : _loadedListings;
+              if (listings.isEmpty) {
                 return ListView(
-                  physics: AlwaysScrollableScrollPhysics(),
-                  children: [
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: const [
                     SizedBox(
-                      height: 280,
-                      child: EmptyView(
+                      height: AppLayout.statePlaceholderHeight,
+                      child: AdminEmptyState(
                         title: ListingCopy.adminListings,
                         message: ListingCopy.noListings,
                       ),
@@ -178,11 +176,14 @@ class _AdminListingsScreenState extends ConsumerState<AdminListingsScreen> {
                   ],
                 );
               }
+              final hasNextPage = _loadedListings.isEmpty
+                  ? page.items.length == _pageSize
+                  : _hasMore;
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                padding: const EdgeInsets.only(bottom: AppSpacing.lg),
                 children: [
-                  for (final listing in page.items)
+                  for (final listing in listings)
                     _AdminListingCard(
                       listing: listing,
                       isBusy: _busyId == listing.id,
@@ -191,12 +192,28 @@ class _AdminListingsScreenState extends ConsumerState<AdminListingsScreen> {
                       onReject: () => _reject(listing),
                       onDelete: () => _delete(listing),
                     ),
-                  _PageControls(
-                    canPrevious: _pageIndex > 0,
-                    canNext: page.items.length == _pageSize,
-                    onPrevious: _previousPage,
-                    onNext: () => _nextPage(page.lastDocument),
-                  ),
+                  if (hasNextPage)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpacing.md,
+                      ),
+                      child: Center(
+                        child: OutlinedButton.icon(
+                          onPressed: _isLoadingMore
+                              ? null
+                              : () => _loadMore(page),
+                          icon: _isLoadingMore
+                              ? const SizedBox.square(
+                                  dimension: AppSpacing.md,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.expand_more),
+                          label: const Text(AdminCopy.loadMore),
+                        ),
+                      ),
+                    ),
                 ],
               );
             },
@@ -206,32 +223,58 @@ class _AdminListingsScreenState extends ConsumerState<AdminListingsScreen> {
     ],
   );
 
+  void _setStatus(ListingStatus? status) {
+    if (_status == status) return;
+    setState(() {
+      _status = status;
+      _resetPages();
+    });
+  }
+
+  Future<void> _loadMore(ListingPage currentPage) async {
+    final cursor = _nextCursor ?? currentPage.lastDocument;
+    if (cursor == null || _isLoadingMore) return;
+    setState(() {
+      if (_loadedListings.isEmpty) _loadedListings.addAll(currentPage.items);
+      _isLoadingMore = true;
+    });
+    try {
+      final page = await ref
+          .read(listingsRepositoryProvider)
+          .getAdminListings(
+            status: _status,
+            keyword: _keyword,
+            startAfter: cursor,
+          );
+      if (!mounted) return;
+      setState(() {
+        _loadedListings.addAll(page.items);
+        _nextCursor = page.lastDocument;
+        _hasMore = page.items.length == _pageSize;
+      });
+    } on AppException catch (error) {
+      _showMessage(error.message);
+    } finally {
+      if (mounted) setState(() => _isLoadingMore = false);
+    }
+  }
+
   Future<void> _openForm([Listing? listing]) async {
     final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => ListingFormScreen(listing: listing, adminMode: true),
       ),
     );
-    if (changed == true && mounted) setState(_loadPage);
+    if (changed == true && mounted) setState(_resetPages);
   }
 
   Future<void> _approve(Listing listing) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(ListingCopy.approvalQuestion),
-        content: Text(listing.title),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text(ListingCopy.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text(ListingCopy.approve),
-          ),
-        ],
-      ),
+    final confirmed = await ConfirmDialog.show(
+      context,
+      title: ListingCopy.approvalQuestion,
+      details: listing.title,
+      cancelLabel: ListingCopy.cancel,
+      confirmLabel: ListingCopy.approve,
     );
     if (confirmed != true) return;
     await _perform(
@@ -244,40 +287,20 @@ class _AdminListingsScreenState extends ConsumerState<AdminListingsScreen> {
   }
 
   Future<void> _reject(Listing listing) async {
-    final controller = TextEditingController();
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(ListingCopy.rejectionTitle),
-        content: TextField(
-          controller: controller,
-          maxLength: 500,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            labelText: ListingCopy.rejectionReason,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(ListingCopy.cancel),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = controller.text.trim();
-              if (value.isEmpty) return;
-              Navigator.pop(context, value);
-            },
-            child: const Text(ListingCopy.reject),
-          ),
-        ],
-      ),
+    final reason = await ReasonDialog.show(
+      context,
+      title: ListingCopy.rejectionTitle,
+      label: ListingCopy.rejectionReason,
+      cancelLabel: ListingCopy.cancel,
+      confirmLabel: ListingCopy.reject,
+      requiredMessage: ListingCopy.rejectionReasonRequired,
     );
-    controller.dispose();
     if (reason == null) return;
     await _perform(
       listing.id,
-      () => ref.read(listingsRepositoryProvider).setStatus(
+      () => ref
+          .read(listingsRepositoryProvider)
+          .setStatus(
             listing.id,
             ListingStatus.rejected,
             rejectionReason: reason,
@@ -287,22 +310,12 @@ class _AdminListingsScreenState extends ConsumerState<AdminListingsScreen> {
   }
 
   Future<void> _delete(Listing listing) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(ListingCopy.deleteQuestion),
-        content: const Text(ListingCopy.deleteWarning),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text(ListingCopy.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text(ListingCopy.delete),
-          ),
-        ],
-      ),
+    final confirmed = await ConfirmDialog.show(
+      context,
+      title: ListingCopy.deleteQuestion,
+      details: ListingCopy.deleteWarning,
+      cancelLabel: ListingCopy.cancel,
+      confirmLabel: ListingCopy.delete,
     );
     if (confirmed != true) return;
     await _perform(
@@ -321,36 +334,20 @@ class _AdminListingsScreenState extends ConsumerState<AdminListingsScreen> {
     try {
       await action();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(successMessage)),
-        );
-        setState(_loadPage);
+        _showMessage(successMessage);
+        setState(_resetPages);
       }
     } on AppException catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.message)));
-      }
+      _showMessage(error.message);
     } finally {
       if (mounted) setState(() => _busyId = null);
     }
   }
 
-  void _nextPage(DocumentSnapshot<Map<String, dynamic>>? lastDocument) {
-    if (lastDocument == null) return;
-    setState(() {
-      _cursors.add(lastDocument);
-      _pageIndex++;
-      _loadPage();
-    });
-  }
-
-  void _previousPage() {
-    if (_pageIndex == 0) return;
-    setState(() {
-      _pageIndex--;
-      _loadPage();
-    });
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
@@ -374,47 +371,68 @@ class _AdminListingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
+      padding: AppInsets.phonePage,
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(listing.title, style: Theme.of(context).textTheme.titleMedium),
-          Text('${listing.ownerName} · ${listing.ownerId}'),
-          Text('${listing.area} · ${listing.status.name}'),
-          if (listing.rejectionReason != null)
-            Text('${ListingCopy.moderationReason}: ${listing.rejectionReason}'),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: isBusy ? null : onEdit,
-                icon: const Icon(Icons.edit_outlined),
-                label: const Text(ListingCopy.edit),
-              ),
-              if (listing.status != ListingStatus.approved)
-                FilledButton.icon(
-                  onPressed: isBusy ? null : onApprove,
-                  icon: const Icon(Icons.check),
-                  label: const Text(ListingCopy.approve),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            child: AppNetworkImage(
+              imageUrl: listing.thumbnailUrl,
+              semanticLabel: '${AdminCopy.imagePreview}: ${listing.title}',
+              width: AppLayout.listingThumbnailSize,
+              height: AppLayout.listingThumbnailSize,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  listing.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-              if (listing.status != ListingStatus.rejected)
-                OutlinedButton.icon(
-                  onPressed: isBusy ? null : onReject,
-                  icon: const Icon(Icons.close),
-                  label: const Text(ListingCopy.reject),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  '${formatUgx(listing.priceUgx)} · ${listing.priceUnit.name}',
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
-              OutlinedButton.icon(
-                onPressed: isBusy ? null : onDelete,
-                icon: const Icon(Icons.delete_outline),
-                label: const Text(ListingCopy.delete),
-              ),
-              if (isBusy)
-                const SizedBox.square(
-                  dimension: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                const SizedBox(height: AppSpacing.xxs),
+                Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xxs,
+                  children: [
+                    Text('${AdminCopy.area}: ${listing.area}'),
+                    Text('${AdminCopy.category}: ${listing.category}'),
+                    Text('${AdminCopy.owner}: ${listing.ownerName}'),
+                  ],
                 ),
-            ],
+                const SizedBox(height: AppSpacing.xs),
+                StatusBadge(
+                  status: _statusKind(listing.status),
+                  label: _statusLabel(listing.status),
+                ),
+                if (listing.rejectionReason != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    '${ListingCopy.moderationReason}: ${listing.rejectionReason}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          _ListingActions(
+            listing: listing,
+            isBusy: isBusy,
+            onEdit: onEdit,
+            onApprove: onApprove,
+            onReject: onReject,
+            onDelete: onDelete,
           ),
         ],
       ),
@@ -422,34 +440,76 @@ class _AdminListingCard extends StatelessWidget {
   );
 }
 
-class _PageControls extends StatelessWidget {
-  const _PageControls({
-    required this.canPrevious,
-    required this.canNext,
-    required this.onPrevious,
-    required this.onNext,
+class _ListingActions extends StatelessWidget {
+  const _ListingActions({
+    required this.listing,
+    required this.isBusy,
+    required this.onEdit,
+    required this.onApprove,
+    required this.onReject,
+    required this.onDelete,
   });
 
-  final bool canPrevious;
-  final bool canNext;
-  final VoidCallback onPrevious;
-  final VoidCallback onNext;
+  final Listing listing;
+  final bool isBusy;
+  final VoidCallback onEdit;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+  final VoidCallback onDelete;
 
   @override
-  Widget build(BuildContext context) => Row(
-    mainAxisAlignment: MainAxisAlignment.center,
-    children: [
-      TextButton(
-        onPressed: canPrevious ? onPrevious : null,
-        child: const Text(ListingCopy.previousPage),
-      ),
-      TextButton(
-        onPressed: canNext ? onNext : null,
-        child: const Text(ListingCopy.nextPage),
+  Widget build(BuildContext context) => PopupMenuButton<String>(
+    tooltip: AdminCopy.actions,
+    enabled: !isBusy,
+    onSelected: (action) {
+      switch (action) {
+        case 'edit':
+          onEdit();
+        case 'approve':
+          onApprove();
+        case 'reject':
+          onReject();
+        case 'delete':
+          onDelete();
+      }
+    },
+    itemBuilder: (context) => [
+      const PopupMenuItem<String>(value: 'edit', child: Text(ListingCopy.edit)),
+      if (listing.status != ListingStatus.approved)
+        const PopupMenuItem<String>(
+          value: 'approve',
+          child: Text(ListingCopy.approve),
+        ),
+      if (listing.status != ListingStatus.rejected)
+        const PopupMenuItem<String>(
+          value: 'reject',
+          child: Text(ListingCopy.reject),
+        ),
+      const PopupMenuItem<String>(
+        value: 'delete',
+        child: Text(ListingCopy.delete),
       ),
     ],
+    icon: isBusy
+        ? const SizedBox.square(
+            dimension: AppSpacing.lg,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : const Icon(Icons.more_vert),
   );
 }
 
+AdminStatusKind _statusKind(ListingStatus status) => switch (status) {
+  ListingStatus.pending => AdminStatusKind.pending,
+  ListingStatus.approved => AdminStatusKind.approved,
+  ListingStatus.rejected => AdminStatusKind.rejected,
+};
+
+String _statusLabel(ListingStatus status) => switch (status) {
+  ListingStatus.pending => ListingCopy.statusPending,
+  ListingStatus.approved => ListingCopy.statusApproved,
+  ListingStatus.rejected => ListingCopy.statusRejected,
+};
+
 String _errorMessage(Object? error) =>
-    error is AppException ? error.message : ListingCopy.noListings;
+    error is AppException ? error.message : AdminCopy.queueError;

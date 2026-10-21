@@ -8,11 +8,15 @@ const {
   initializeTestEnvironment,
 } = require('@firebase/rules-unit-testing');
 const {
+  collection,
   doc,
+  getDocs,
   getDoc,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
 } = require('firebase/firestore');
 
@@ -54,6 +58,34 @@ function roleRequest(uid, overrides = {}) {
     name: 'Test User',
     email: `${uid}@example.com`,
     phone: '+256701234567',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...overrides,
+  };
+}
+
+function listing(ownerId, status, overrides = {}) {
+  return {
+    ownerId,
+    ownerName: 'Test Owner',
+    ownerPhone: '+256701234567',
+    type: 'property',
+    category: 'Rentals',
+    title: 'Test listing',
+    titleLower: 'test listing',
+    description: 'Test listing description.',
+    priceUgx: 350000,
+    priceUnit: 'month',
+    area: 'Oli',
+    amenities: [],
+    imageUrls: [],
+    thumbnailUrl: 'https://example.test/listing.jpg',
+    status,
+    ratingAvg: 0,
+    ratingCount: 0,
+    searchKeywords: [],
+    isFeatured: false,
+    ownerVerified: false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     ...overrides,
@@ -159,23 +191,6 @@ test('only a token admin can review role requests and update assigned roles', as
     );
   });
 
-  test('only token admins can read all users', async () => {
-    await seedDocuments(async (db) => {
-      await setDoc(doc(db, 'users/target'), {
-        ...profile('target@example.com'),
-      });
-    });
-    const tenantDb = testEnvironment
-      .authenticatedContext('tenant-reader')
-      .firestore();
-    const adminDb = testEnvironment
-      .authenticatedContext('admin-reader', { admin: true })
-      .firestore();
-
-    await assertFails(getDoc(doc(tenantDb, 'users/target')));
-    await assertSucceeds(getDoc(doc(adminDb, 'users/target')));
-  });
-
   const adminDb = testEnvironment
     .authenticatedContext('admin', { admin: true })
     .firestore();
@@ -200,12 +215,28 @@ test('only a token admin can review role requests and update assigned roles', as
   );
 });
 
+test('only token admins can read all users', async () => {
+  await seedDocuments(async (db) => {
+    await setDoc(doc(db, 'users/target'), profile('target@example.com'));
+  });
+  const tenantDb = testEnvironment
+    .authenticatedContext('tenant-reader')
+    .firestore();
+  const adminDb = testEnvironment
+    .authenticatedContext('admin-reader', { admin: true })
+    .firestore();
+
+  await assertFails(getDoc(doc(tenantDb, 'users/target')));
+  await assertSucceeds(getDoc(doc(adminDb, 'users/target')));
+});
+
 test('listing reads are restricted to approved items, owners, or admins', async () => {
   await seedDocuments(async (db) => {
     await setDoc(doc(db, 'listings/approved'), {
       ownerId: 'landlord',
       status: 'approved',
     });
+
     await setDoc(doc(db, 'listings/pending'), {
       ownerId: 'landlord',
       status: 'pending',
@@ -226,40 +257,93 @@ test('listing reads are restricted to approved items, owners, or admins', async 
     .firestore();
   await assertSucceeds(getDoc(doc(adminDb, 'listings/pending')));
   await assertSucceeds(
-    setDoc(doc(adminDb, 'listings/admin-created'), {
-      ownerId: 'admin',
-      status: 'approved',
-    }),
+    setDoc(doc(adminDb, 'listings/admin-created'), listing('admin', 'approved')),
+  );
+});
+
+test('signed-out visitors can read approved listing queries and config only', async () => {
+  await seedDocuments(async (db) => {
+    await setDoc(doc(db, 'listings/public-approved'), listing('public-owner', 'approved'));
+    await setDoc(doc(db, 'listings/private-pending'), listing('public-owner', 'pending'));
+    await setDoc(doc(db, 'config/categories'), {
+      items: [{ id: 'rentals', label: 'Rentals', active: true }],
+    });
+  });
+  const guestDb = testEnvironment.unauthenticatedContext().firestore();
+
+  const approved = await assertSucceeds(
+    getDocs(
+      query(
+        collection(guestDb, 'listings'),
+        where('status', '==', 'approved'),
+        where('ownerId', '==', 'public-owner'),
+      ),
+    ),
+  );
+  assert.ok(approved.docs.some((item) => item.id == 'public-approved'));
+  assert.ok(approved.docs.every((item) => item.get('status') == 'approved'));
+  await assertFails(getDocs(collection(guestDb, 'listings')));
+  await assertSucceeds(getDoc(doc(guestDb, 'config/categories')));
+  await assertFails(
+    setDoc(doc(guestDb, 'config/guest-write'), { items: [] }),
   );
 });
 
 test('only landlord or provider profiles may create pending listings', async () => {
   await seedDocuments(async (db) => {
-    await setDoc(doc(db, 'users/landlord'), {
-      role: 'landlord',
-    });
+    await setDoc(
+      doc(db, 'users/landlord'),
+      profile('landlord@example.com', { role: 'landlord' }),
+    );
   });
   const landlordDb = testEnvironment
     .authenticatedContext('landlord')
     .firestore();
   await assertSucceeds(
-    setDoc(doc(landlordDb, 'listings/new-listing'), {
-      ownerId: 'landlord',
-      status: 'pending',
-    }),
+    setDoc(doc(landlordDb, 'listings/new-listing'), listing('landlord', 'pending')),
   );
   await assertFails(
-    setDoc(doc(landlordDb, 'listings/approved-by-owner'), {
-      ownerId: 'landlord',
-      status: 'approved',
-    }),
+    setDoc(doc(landlordDb, 'listings/approved-by-owner'), listing('landlord', 'approved')),
   );
 
   const tenantDb = testEnvironment.authenticatedContext('tenant').firestore();
   await assertFails(
-    setDoc(doc(tenantDb, 'listings/tenant-listing'), {
-      ownerId: 'tenant',
-      status: 'pending',
+    setDoc(doc(tenantDb, 'listings/tenant-listing'), listing('tenant', 'pending')),
+  );
+});
+
+test('owners cannot set ownerVerified; administrators can', async () => {
+  await seedDocuments(async (db) => {
+    await setDoc(
+      doc(db, 'users/verified-owner'),
+      profile('owner@example.com', { role: 'landlord' }),
+    );
+    await setDoc(
+      doc(db, 'listings/protected-verification'),
+      listing('verified-owner', 'pending'),
+    );
+  });
+  const ownerDb = testEnvironment
+    .authenticatedContext('verified-owner', { email: 'owner@example.com' })
+    .firestore();
+  const adminDb = testEnvironment
+    .authenticatedContext('verification-admin', { admin: true })
+    .firestore();
+
+  await assertFails(
+    updateDoc(doc(ownerDb, 'listings/protected-verification'), {
+      ownerVerified: true,
+    }),
+  );
+  await assertFails(
+    setDoc(
+      doc(ownerDb, 'listings/forged-verification'),
+      listing('verified-owner', 'pending', { ownerVerified: true }),
+    ),
+  );
+  await assertSucceeds(
+    updateDoc(doc(adminDb, 'listings/protected-verification'), {
+      ownerVerified: true,
     }),
   );
 });

@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/app_exception.dart';
-import '../../../core/widgets/empty_view.dart';
-import '../../../core/widgets/error_view.dart';
-import '../../../core/widgets/loading_view.dart';
+import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/admin_widgets.dart';
 import '../../listings/data/app_config.dart';
 import '../../listings/presentation/app_config_providers.dart';
 import 'admin_settings_copy.dart';
@@ -16,48 +15,74 @@ class AdminSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final config = ref.watch(appConfigProvider);
     return config.when(
-      loading: () => const LoadingView(),
-      error: (error, stackTrace) => ErrorView(
-        message: error is AppException ? error.message : AdminSettingsCopy.error,
+      loading: () => const AdminLoadingList(itemCount: 3),
+      error: (error, stackTrace) => AdminErrorState(
+        message: error is AppException
+            ? error.message
+            : AdminSettingsCopy.error,
         retryLabel: AdminSettingsCopy.retry,
         onRetry: () => ref.invalidate(appConfigProvider),
       ),
-      data: (value) => ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: OutlinedButton.icon(
-              onPressed: () => _seedDefaults(context, ref),
-              icon: const Icon(Icons.restart_alt),
-              label: const Text(AdminSettingsCopy.seedDefaults),
-            ),
+      data: (value) {
+        final categorySection = _ConfigSection(
+          title: AdminSettingsCopy.categories,
+          addLabel: AdminSettingsCopy.addCategory,
+          options: value.categories,
+          onSave: (items) => _save(
+            context,
+            ref,
+            () => ref.read(appConfigRepositoryProvider).saveCategories(items),
           ),
-          _ConfigSection(
-            title: AdminSettingsCopy.categories,
-            addLabel: AdminSettingsCopy.addCategory,
-            options: value.categories,
-            onSave: (items) => _save(
-              context,
-              ref,
-              () => ref
-                  .read(appConfigRepositoryProvider)
-                  .saveCategories(items),
-            ),
+        );
+        final areaSection = _ConfigSection(
+          title: AdminSettingsCopy.areas,
+          addLabel: AdminSettingsCopy.addArea,
+          options: value.areas,
+          onSave: (items) => _save(
+            context,
+            ref,
+            () => ref.read(appConfigRepositoryProvider).saveAreas(items),
           ),
-          const SizedBox(height: 24),
-          _ConfigSection(
-            title: AdminSettingsCopy.areas,
-            addLabel: AdminSettingsCopy.addArea,
-            options: value.areas,
-            onSave: (items) => _save(
-              context,
-              ref,
-              () => ref.read(appConfigRepositoryProvider).saveAreas(items),
-            ),
-          ),
-        ],
-      ),
+        );
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= AppLayout.wideBreakpoint;
+            final sectionWidth = wide
+                ? (constraints.maxWidth - AppSpacing.md) / 2
+                : constraints.maxWidth;
+            return ListView(
+              padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+              children: [
+                const AdminPageHeader(
+                  title: AdminSettingsCopy.title,
+                  subtitle: AdminSettingsCopy.settingsSubtitle,
+                ),
+                AdminSectionCard(
+                  title: AdminSettingsCopy.seedDefaults,
+                  subtitle: AdminSettingsCopy.seedDefaultsDescription,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _seedDefaults(context, ref),
+                      icon: const Icon(Icons.restart_alt),
+                      label: const Text(AdminSettingsCopy.seedDefaults),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Wrap(
+                  spacing: AppSpacing.md,
+                  runSpacing: AppSpacing.md,
+                  children: [
+                    SizedBox(width: sectionWidth, child: categorySection),
+                    SizedBox(width: sectionWidth, child: areaSection),
+                  ],
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -70,9 +95,9 @@ class AdminSettingsScreen extends ConsumerWidget {
       await action();
       ref.invalidate(appConfigProvider);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(AdminSettingsCopy.saved)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text(AdminSettingsCopy.saved)));
       }
     } on AppException catch (error) {
       if (context.mounted) {
@@ -87,9 +112,9 @@ class AdminSettingsScreen extends ConsumerWidget {
       await ref.read(appConfigRepositoryProvider).seedDefaults();
       ref.invalidate(appConfigProvider);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(AdminSettingsCopy.seeded)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text(AdminSettingsCopy.seeded)));
       }
     } on AppException catch (error) {
       if (context.mounted) {
@@ -119,12 +144,19 @@ class _ConfigSection extends StatefulWidget {
 
 class _ConfigSectionState extends State<_ConfigSection> {
   late List<ConfigOption> _options;
+  final _addController = TextEditingController();
   bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
     _options = List.of(widget.options);
+  }
+
+  @override
+  void dispose() {
+    _addController.dispose();
+    super.dispose();
   }
 
   @override
@@ -136,92 +168,99 @@ class _ConfigSectionState extends State<_ConfigSection> {
   }
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
-          if (_options.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: EmptyView(
-                title: AdminSettingsCopy.title,
-                message: AdminSettingsCopy.noOptions,
-              ),
-            ),
-          for (var index = 0; index < _options.length; index++)
-            ListTile(
-              title: Text(_options[index].label),
-              subtitle: Text(_options[index].active
-                  ? AdminSettingsCopy.active
-                  : AdminSettingsCopy.inactive),
-              leading: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: AdminSettingsCopy.moveUp,
-                    onPressed: index == 0 || _isSaving
-                        ? null
-                        : () => _move(index, index - 1),
-                    icon: const Icon(Icons.keyboard_arrow_up),
+  Widget build(BuildContext context) => AdminSectionCard(
+    title: widget.title,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_options.isEmpty)
+          const AdminEmptyState(
+            title: AdminSettingsCopy.title,
+            message: AdminSettingsCopy.noOptions,
+          )
+        else
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            itemCount: _options.length,
+            onReorderItem: _move,
+            itemBuilder: (context, index) {
+              final option = _options[index];
+              return ListTile(
+                key: ValueKey(option.id),
+                leading: ReorderableDragStartListener(
+                  index: index,
+                  child: const SizedBox.square(
+                    dimension: AppLayout.minimumTapTarget,
+                    child: Icon(Icons.drag_handle),
                   ),
-                  IconButton(
-                    tooltip: AdminSettingsCopy.moveDown,
-                    onPressed: index == _options.length - 1 || _isSaving
-                        ? null
-                        : () => _move(index, index + 1),
-                    icon: const Icon(Icons.keyboard_arrow_down),
-                  ),
-                ],
-              ),
-              trailing: Wrap(
-                spacing: 4,
-                children: [
-                  IconButton(
-                    tooltip: AdminSettingsCopy.rename,
-                    onPressed: _isSaving ? null : () => _rename(index),
-                    icon: const Icon(Icons.edit_outlined),
-                  ),
-                  IconButton(
-                    tooltip: _options[index].active
-                        ? AdminSettingsCopy.deactivate
-                        : AdminSettingsCopy.activate,
-                    onPressed: _isSaving ? null : () => _toggle(index),
-                    icon: Icon(
-                      _options[index].active
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
+                ),
+                title: Text(option.label),
+                subtitle: Text(
+                  option.active
+                      ? AdminSettingsCopy.active
+                      : AdminSettingsCopy.inactive,
+                ),
+                trailing: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    IconButton(
+                      tooltip: AdminSettingsCopy.rename,
+                      onPressed: _isSaving ? null : () => _rename(index),
+                      icon: const Icon(Icons.edit_outlined),
                     ),
-                  ),
-                ],
-              ),
-            ),
-          Wrap(
-            spacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: _isSaving ? null : _add,
-                icon: const Icon(Icons.add),
-                label: Text(widget.addLabel),
-              ),
-              FilledButton(
-                onPressed: _isSaving ? null : _save,
-                child: _isSaving
-                    ? const CircularProgressIndicator()
-                    : const Text(AdminSettingsCopy.save),
-              ),
-            ],
+                    Switch(
+                      value: option.active,
+                      onChanged: _isSaving ? null : (_) => _toggle(index),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
-        ],
-      ),
+        const SizedBox(height: AppSpacing.md),
+        TextField(
+          controller: _addController,
+          enabled: !_isSaving,
+          maxLength: 60,
+          onSubmitted: (_) => _add(),
+          decoration: InputDecoration(
+            labelText: widget.addLabel,
+            helperText: AdminSettingsCopy.label,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          children: [
+            OutlinedButton.icon(
+              onPressed: _isSaving ? null : _add,
+              icon: const Icon(Icons.add),
+              label: Text(widget.addLabel),
+            ),
+            FilledButton(
+              onPressed: _isSaving ? null : _save,
+              child: _isSaving
+                  ? const SizedBox.square(
+                      dimension: AppSpacing.lg,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text(AdminSettingsCopy.save),
+            ),
+          ],
+        ),
+      ],
     ),
   );
 
-  Future<void> _add() async {
-    final label = await _askLabel();
-    if (label == null) return;
+  void _add() {
+    final label = _addController.text.trim();
+    if (label.isEmpty) {
+      _showMessage(AdminSettingsCopy.required);
+      return;
+    }
     final id = _makeId(label);
     if (_options.any((option) => option.id == id)) {
       _showMessage(AdminSettingsCopy.required);
@@ -229,6 +268,7 @@ class _ConfigSectionState extends State<_ConfigSection> {
     }
     setState(() {
       _options.add(ConfigOption(id: id, label: label, active: true));
+      _addController.clear();
     });
   }
 
@@ -236,7 +276,9 @@ class _ConfigSectionState extends State<_ConfigSection> {
     final label = await _askLabel(initial: _options[index].label);
     if (label == null) return;
     final id = _makeId(label);
-    if (_options.any((option) => option.id == id && option.id != _options[index].id)) {
+    if (_options.any(
+      (option) => option.id == id && option.id != _options[index].id,
+    )) {
       _showMessage(AdminSettingsCopy.required);
       return;
     }
@@ -258,10 +300,12 @@ class _ConfigSectionState extends State<_ConfigSection> {
     );
   });
 
-  void _move(int from, int to) => setState(() {
-    final item = _options.removeAt(from);
-    _options.insert(to, item);
-  });
+  void _move(int from, int to) {
+    setState(() {
+      final item = _options.removeAt(from);
+      _options.insert(to, item);
+    });
+  }
 
   Future<void> _save() async {
     setState(() => _isSaving = true);
@@ -278,6 +322,7 @@ class _ConfigSectionState extends State<_ConfigSection> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(widget.addLabel),
+        scrollable: true,
         content: TextField(
           controller: controller,
           maxLength: 60,

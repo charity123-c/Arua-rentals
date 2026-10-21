@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/errors/app_exception.dart';
-import '../../../core/widgets/error_view.dart';
-import '../../../core/widgets/loading_view.dart';
+import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/admin_widgets.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../data/admin_records.dart';
 import '../../listings/presentation/admin_listings_screen.dart';
+import '../../listings/presentation/listing_copy.dart';
 import 'admin_copy.dart';
 import 'admin_providers.dart';
 import 'admin_queue_screens.dart';
@@ -24,124 +27,136 @@ class AdminDashboardScreen extends ConsumerStatefulWidget {
 class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
   int _selectedIndex = 0;
 
-  static const _sections = [
-    AdminCopy.overview,
-    AdminCopy.roleRequests,
-    AdminCopy.users,
-    AdminCopy.listings,
-    AdminSettingsCopy.title,
-  ];
-
   @override
   Widget build(BuildContext context) {
-    final wideLayout = MediaQuery.sizeOf(context).width >= 900;
+    final wideLayout =
+        MediaQuery.sizeOf(context).width >= AppLayout.wideBreakpoint;
     final user = ref.watch(currentAppUserProvider).asData?.value;
+    final stats = ref.watch(adminDashboardStatsProvider).asData?.value;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_sections[_selectedIndex]),
-        actions: [
-          PopupMenuButton<String>(
-            tooltip: AdminCopy.logout,
-            icon: CircleAvatar(
-              child: Text(
-                user?.name.isNotEmpty == true
-                    ? user!.name.substring(0, 1).toUpperCase()
-                    : 'A',
-              ),
-            ),
-            onSelected: (value) {
-              if (value == 'logout') _logout(context, ref);
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem<String>(
-                enabled: false,
-                value: 'profile',
-                child: Text(user?.email ?? AdminCopy.title),
-              ),
-              const PopupMenuItem<String>(
-                value: 'logout',
-                child: Text(AdminCopy.logout),
-              ),
-            ],
-          ),
-          const SizedBox(width: 8),
-        ],
+      body: SafeArea(
+        bottom: false,
+        child: wideLayout
+            ? Row(
+                children: [
+                  _WideNavigation(
+                    selectedIndex: _selectedIndex,
+                    stats: stats,
+                    name: user?.name ?? AdminCopy.title,
+                    onSelect: _selectSection,
+                    onLogout: () => _logout(context, ref),
+                    onPreview: () => context.go('/?preview=true'),
+                  ),
+                  const VerticalDivider(width: AppLayout.dividerThickness),
+                  Expanded(child: AdminContent(child: _sectionBody())),
+                ],
+              )
+            : AdminContent(child: _sectionBody()),
       ),
-      body: wideLayout
-          ? Row(
-              children: [
-                NavigationRail(
-                  selectedIndex: _selectedIndex,
-                  onDestinationSelected: (index) =>
-                      setState(() => _selectedIndex = index),
-                  labelType: NavigationRailLabelType.all,
-                  destinations: const [
-                    NavigationRailDestination(
-                      icon: Icon(Icons.dashboard_outlined),
-                      selectedIcon: Icon(Icons.dashboard),
-                      label: Text(AdminCopy.overview),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.fact_check_outlined),
-                      selectedIcon: Icon(Icons.fact_check),
-                      label: Text(AdminCopy.roleRequests),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.people_outline),
-                      selectedIcon: Icon(Icons.people),
-                      label: Text(AdminCopy.users),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.home_work_outlined),
-                      selectedIcon: Icon(Icons.home_work),
-                      label: Text(AdminCopy.listings),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.settings_outlined),
-                      selectedIcon: Icon(Icons.settings),
-                      label: Text(AdminSettingsCopy.title),
-                    ),
-                  ],
-                ),
-                const VerticalDivider(width: 1),
-                Expanded(child: _sectionBody()),
-              ],
-            )
-          : _sectionBody(),
       bottomNavigationBar: wideLayout
           ? null
           : NavigationBar(
-              selectedIndex: _selectedIndex,
-              onDestinationSelected: (index) =>
-                  setState(() => _selectedIndex = index),
-              destinations: const [
-                NavigationDestination(
+              selectedIndex: _selectedIndex < 3 ? _selectedIndex : 3,
+              onDestinationSelected: (index) {
+                if (index == 3) {
+                  _showMoreMenu(
+                    context,
+                    name: user?.name ?? AdminCopy.title,
+                    email: user?.email ?? AdminCopy.title,
+                    pendingListings: stats?.pendingListings ?? 0,
+                  );
+                } else {
+                  _selectSection(index);
+                }
+              },
+              destinations: [
+                const NavigationDestination(
                   icon: Icon(Icons.dashboard_outlined),
                   label: AdminCopy.overview,
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.fact_check_outlined),
+                  icon: _NavBadgeIcon(
+                    icon: Icons.fact_check_outlined,
+                    count: stats?.pendingRoleRequests ?? 0,
+                  ),
                   label: AdminCopy.roleRequests,
                 ),
-                NavigationDestination(
+                const NavigationDestination(
                   icon: Icon(Icons.people_outline),
                   label: AdminCopy.users,
                 ),
-                NavigationDestination(
-                  icon: Icon(Icons.home_work_outlined),
-                  label: AdminCopy.listings,
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.settings_outlined),
-                  label: AdminSettingsCopy.title,
+                const NavigationDestination(
+                  icon: Icon(Icons.more_horiz),
+                  label: AdminCopy.more,
                 ),
               ],
             ),
     );
   }
 
+  void _selectSection(int index) {
+    if (index == _selectedIndex) return;
+    setState(() => _selectedIndex = index);
+  }
+
+  Future<void> _showMoreMenu(
+    BuildContext context, {
+    required String name,
+    required String email,
+    required int pendingListings,
+  }) async {
+    final selected = await showModalBottomSheet<int>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: CircleAvatar(child: Text(_initialFor(name))),
+              title: Text(name),
+              subtitle: Text(email),
+              enabled: false,
+            ),
+            const Divider(height: AppLayout.dividerThickness),
+            ListTile(
+              leading: _NavBadgeIcon(
+                icon: Icons.home_work_outlined,
+                count: pendingListings,
+              ),
+              title: const Text(AdminCopy.manageListings),
+              onTap: () => Navigator.pop(context, 3),
+            ),
+            ListTile(
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text(AdminCopy.settings),
+              onTap: () => Navigator.pop(context, 4),
+            ),
+            ListTile(
+              leading: const Icon(Icons.public_outlined),
+              title: const Text(ListingCopy.previewPublicSite),
+              onTap: () => Navigator.pop(context, -2),
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text(AdminCopy.logout),
+              onTap: () => Navigator.pop(context, -1),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || !context.mounted || selected == null) return;
+    if (selected == -1) {
+      await _logout(context, ref);
+    } else if (selected == -2) {
+      context.go('/?preview=true');
+    } else {
+      _selectSection(selected);
+    }
+  }
+
   Widget _sectionBody() => switch (_selectedIndex) {
-    0 => const AdminOverviewScreen(),
+    0 => AdminOverviewScreen(onNavigate: _selectSection),
     1 => const RoleRequestsScreen(),
     2 => const AdminUsersScreen(),
     3 => const AdminListingsScreen(),
@@ -149,73 +164,222 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
   };
 }
 
+class _WideNavigation extends StatelessWidget {
+  const _WideNavigation({
+    required this.selectedIndex,
+    required this.stats,
+    required this.name,
+    required this.onSelect,
+    required this.onLogout,
+    required this.onPreview,
+  });
+
+  final int selectedIndex;
+  final AdminDashboardStats? stats;
+  final String name;
+  final ValueChanged<int> onSelect;
+  final VoidCallback onLogout;
+  final VoidCallback onPreview;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: AppLayout.navigationRailWidth,
+    child: Column(
+      children: [
+        Expanded(
+          child: NavigationRail(
+            extended: true,
+            minExtendedWidth: AppLayout.navigationRailWidth,
+            selectedIndex: selectedIndex,
+            onDestinationSelected: onSelect,
+            destinations: [
+              const NavigationRailDestination(
+                icon: Icon(Icons.dashboard_outlined),
+                selectedIcon: Icon(Icons.dashboard),
+                label: Text(AdminCopy.overview),
+              ),
+              NavigationRailDestination(
+                icon: _NavBadgeIcon(
+                  icon: Icons.fact_check_outlined,
+                  count: stats?.pendingRoleRequests ?? 0,
+                ),
+                selectedIcon: _NavBadgeIcon(
+                  icon: Icons.fact_check,
+                  count: stats?.pendingRoleRequests ?? 0,
+                ),
+                label: const Text(AdminCopy.roleRequests),
+              ),
+              const NavigationRailDestination(
+                icon: Icon(Icons.people_outline),
+                selectedIcon: Icon(Icons.people),
+                label: Text(AdminCopy.users),
+              ),
+              NavigationRailDestination(
+                icon: _NavBadgeIcon(
+                  icon: Icons.home_work_outlined,
+                  count: stats?.pendingListings ?? 0,
+                ),
+                selectedIcon: _NavBadgeIcon(
+                  icon: Icons.home_work,
+                  count: stats?.pendingListings ?? 0,
+                ),
+                label: const Text(AdminCopy.listings),
+              ),
+              const NavigationRailDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: Text(AdminSettingsCopy.title),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: AppLayout.dividerThickness),
+        Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              OutlinedButton.icon(
+                onPressed: onPreview,
+                icon: const Icon(Icons.public_outlined),
+                label: const Text(ListingCopy.previewPublicSite),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              OutlinedButton.icon(
+                onPressed: onLogout,
+                icon: const Icon(Icons.logout),
+                label: const Text(AdminCopy.logout),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _NavBadgeIcon extends StatelessWidget {
+  const _NavBadgeIcon({required this.icon, required this.count});
+
+  final IconData icon;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => Badge(
+    isLabelVisible: count > 0,
+    label: Text(count > 99 ? '99+' : '$count'),
+    child: Icon(icon),
+  );
+}
+
 class AdminOverviewScreen extends ConsumerWidget {
-  const AdminOverviewScreen({super.key});
+  const AdminOverviewScreen({required this.onNavigate, super.key});
+
+  final ValueChanged<int> onNavigate;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final stats = ref.watch(adminDashboardStatsProvider);
-    final width = MediaQuery.sizeOf(context).width;
-    final columns = width >= 1100
-        ? 3
-        : width >= 600
-        ? 2
-        : 1;
-    final cardWidth = (width - 48 - ((columns - 1) * 16)) / columns;
     return RefreshIndicator(
       onRefresh: () => ref.refresh(adminDashboardStatsProvider.future),
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.only(bottom: AppSpacing.lg),
         children: [
-          Text(
-            AdminCopy.title,
-            style: Theme.of(context).textTheme.headlineSmall,
+          const AdminPageHeader(
+            title: AdminCopy.title,
+            subtitle: AdminCopy.overviewSubtitle,
           ),
-          const SizedBox(height: 20),
           stats.when(
-            loading: () => const SizedBox(height: 220, child: LoadingView()),
+            loading: () => const SizedBox(
+              height: AppLayout.overviewLoadingHeight,
+              child: AdminLoadingList(itemCount: 4),
+            ),
             error: (error, stackTrace) => SizedBox(
-              height: 220,
-              child: ErrorView(
+              height: AppLayout.statePlaceholderHeight,
+              child: AdminErrorState(
                 message: _errorMessage(error),
                 retryLabel: AdminCopy.retry,
                 onRetry: () => ref.invalidate(adminDashboardStatsProvider),
               ),
             ),
-            data: (data) => Wrap(
-              spacing: 16,
-              runSpacing: 16,
+            data: (data) => Column(
               children: [
-                _StatCard(
-                  width: cardWidth,
-                  label: AdminCopy.totalUsers,
-                  count: data.totalUsers,
-                  icon: Icons.people_outline,
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns =
+                        constraints.maxWidth >= AppLayout.wideBreakpoint
+                        ? 4
+                        : 2;
+                    return GridView.count(
+                      crossAxisCount: columns,
+                      crossAxisSpacing: AppSpacing.md,
+                      mainAxisSpacing: AppSpacing.md,
+                      childAspectRatio: columns == 2
+                          ? AppLayout.phoneStatCardAspectRatio
+                          : AppLayout.wideStatCardAspectRatio,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        StatCard(
+                          label: AdminCopy.totalUsers,
+                          value: data.totalUsers,
+                          icon: Icons.people_outline,
+                        ),
+                        StatCard(
+                          label: AdminCopy.pendingRequests,
+                          value: data.pendingRoleRequests,
+                          icon: Icons.fact_check_outlined,
+                        ),
+                        StatCard(
+                          label: AdminCopy.pendingListings,
+                          value: data.pendingListings,
+                          icon: Icons.hourglass_top,
+                        ),
+                        StatCard(
+                          label: AdminCopy.approvedListings,
+                          value: data.approvedListings,
+                          icon: Icons.check_circle_outline,
+                        ),
+                        StatCard(
+                          label: AdminCopy.rejectedListings,
+                          value: data.rejectedListings,
+                          icon: Icons.cancel_outlined,
+                        ),
+                      ],
+                    );
+                  },
                 ),
-                _StatCard(
-                  width: cardWidth,
-                  label: AdminCopy.pendingRequests,
-                  count: data.pendingRoleRequests,
-                  icon: Icons.fact_check_outlined,
-                ),
-                _StatCard(
-                  width: cardWidth,
-                  label: AdminCopy.pendingListings,
-                  count: data.pendingListings,
-                  icon: Icons.hourglass_top,
-                ),
-                _StatCard(
-                  width: cardWidth,
-                  label: AdminCopy.approvedListings,
-                  count: data.approvedListings,
-                  icon: Icons.check_circle_outline,
-                ),
-                _StatCard(
-                  width: cardWidth,
-                  label: AdminCopy.rejectedListings,
-                  count: data.rejectedListings,
-                  icon: Icons.cancel_outlined,
+                const SizedBox(height: AppSpacing.lg),
+                AdminSectionCard(
+                  title: AdminCopy.needsAttention,
+                  child: Wrap(
+                    spacing: AppSpacing.md,
+                    runSpacing: AppSpacing.md,
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed: () => onNavigate(1),
+                        icon: const Icon(Icons.fact_check_outlined),
+                        label: Text(
+                          '${AdminCopy.reviewRequests} (${data.pendingRoleRequests})',
+                        ),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: () => onNavigate(3),
+                        icon: const Icon(Icons.home_work_outlined),
+                        label: Text(
+                          '${AdminCopy.reviewListings} (${data.pendingListings})',
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -224,40 +388,6 @@ class AdminOverviewScreen extends ConsumerWidget {
       ),
     );
   }
-}
-
-class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.width,
-    required this.label,
-    required this.count,
-    required this.icon,
-  });
-
-  final double width;
-  final String label;
-  final int count;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: width,
-    child: Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 16),
-            Text('$count', style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: 4),
-            Text(label),
-          ],
-        ),
-      ),
-    ),
-  );
 }
 
 class AccessDeniedScreen extends StatelessWidget {
@@ -268,7 +398,7 @@ class AccessDeniedScreen extends StatelessWidget {
     appBar: AppBar(title: const Text(AdminCopy.accessDenied)),
     body: Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Text(AdminCopy.accessDeniedMessage, textAlign: TextAlign.center),
       ),
     ),
@@ -285,6 +415,10 @@ Future<void> _logout(BuildContext context, WidgetRef ref) async {
     }
   }
 }
+
+String _initialFor(String? name) => name?.isNotEmpty == true
+    ? name!.substring(0, 1).toUpperCase()
+    : AdminCopy.title.substring(0, 1);
 
 String _errorMessage(Object error) =>
     error is AppException ? error.message : AdminCopy.adminDataError;

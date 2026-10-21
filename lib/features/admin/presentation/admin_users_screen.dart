@@ -5,9 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/app_exception.dart';
-import '../../../core/widgets/empty_view.dart';
-import '../../../core/widgets/error_view.dart';
-import '../../../core/widgets/loading_view.dart';
+import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/admin_widgets.dart';
 import '../../../core/utils/phone_normalizer.dart';
 import '../../auth/data/app_user.dart';
 import '../data/admin_records.dart';
@@ -29,6 +28,7 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
   Timer? _searchDebounce;
   int _pageIndex = 0;
   String _searchTerm = '';
+  UserRole? _roleFilter;
   String? _busyUid;
 
   @override
@@ -83,28 +83,49 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
   @override
   Widget build(BuildContext context) => Column(
     children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-        child: TextField(
-          controller: _searchController,
-          onChanged: _onSearchChanged,
-          decoration: InputDecoration(
-            labelText: AdminCopy.searchUsers,
-            prefixIcon: const Icon(Icons.search),
-            suffixIcon: _searchController.text.isEmpty
-                ? null
-                : IconButton(
-                    tooltip: AdminCopy.clearSearch,
-                    onPressed: () {
-                      _searchController.clear();
-                      _onSearchChanged('');
-                    },
-                    icon: const Icon(Icons.clear),
-                  ),
-            border: const OutlineInputBorder(),
-          ),
-        ),
+      const AdminPageHeader(
+        title: AdminCopy.users,
+        subtitle: AdminCopy.usersSubtitle,
       ),
+      AdminFilterBar(
+        controller: _searchController,
+        searchLabel: AdminCopy.searchUsers,
+        onSearchChanged: _onSearchChanged,
+        clearSearchLabel: AdminCopy.clearSearch,
+        onClear: () {
+          _searchController.clear();
+          _onSearchChanged('');
+        },
+        filters: [
+          Wrap(
+            spacing: AppSpacing.xs,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xs,
+                  vertical: AppSpacing.md,
+                ),
+                child: Text(
+                  AdminCopy.filterRole,
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+              ),
+              ChoiceChip(
+                label: const Text(AdminCopy.allRoles),
+                selected: _roleFilter == null,
+                onSelected: (_) => _setRoleFilter(null),
+              ),
+              for (final role in UserRole.values)
+                ChoiceChip(
+                  label: Text(role.name),
+                  selected: _roleFilter == role,
+                  onSelected: (_) => _setRoleFilter(role),
+                ),
+            ],
+          ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.md),
       Expanded(
         child: RefreshIndicator(
           onRefresh: _refresh,
@@ -114,16 +135,26 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  children: [SizedBox(height: 280, child: LoadingView())],
+                  children: const [
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+                      child: SizedBox(
+                        height: AppLayout.statePlaceholderHeight,
+                        child: AdminLoadingList(itemCount: 4),
+                      ),
+                    ),
+                  ],
                 );
               }
               if (snapshot.hasError) {
                 return ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   children: [
-                    SizedBox(
-                      height: 280,
-                      child: ErrorView(
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpacing.xl,
+                      ),
+                      child: AdminErrorState(
                         message: _errorMessage(snapshot.error),
                         retryLabel: AdminCopy.retry,
                         onRetry: () => setState(_loadPage),
@@ -133,29 +164,39 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
                 );
               }
               final page = snapshot.data!;
-              if (page.items.isEmpty) {
+              final users = page.items
+                  .where(
+                    (user) => _roleFilter == null || user.role == _roleFilter,
+                  )
+                  .toList();
+              if (users.isEmpty) {
                 return ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   children: [
-                    SizedBox(
-                      height: 280,
-                      child: EmptyView(
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+                      child: AdminEmptyState(
                         title: AdminCopy.users,
                         message: AdminCopy.noUsers,
                       ),
                     ),
+                    _pageControls(
+                      canPrevious: _pageIndex > 0,
+                      canNext: page.items.length == _pageSize,
+                    ),
                   ],
                 );
               }
-              final wide = MediaQuery.sizeOf(context).width >= 800;
+              final wide =
+                  MediaQuery.sizeOf(context).width >= AppLayout.wideBreakpoint;
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.only(bottom: AppSpacing.lg),
                 children: [
                   if (wide)
-                    _usersTable(page.items)
+                    _usersTable(users)
                   else
-                    for (final user in page.items) _userCard(user),
+                    for (final user in users) _userCard(user),
                   _pageControls(
                     canPrevious: _pageIndex > 0,
                     canNext: page.items.length == _pageSize,
@@ -169,6 +210,18 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
     ],
   );
 
+  void _setRoleFilter(UserRole? role) {
+    if (_roleFilter == role) return;
+    setState(() {
+      _roleFilter = role;
+      _pageIndex = 0;
+      _cursors
+        ..clear()
+        ..add(null);
+      _loadPage();
+    });
+  }
+
   Widget _usersTable(List<AdminUserRecord> users) => SingleChildScrollView(
     scrollDirection: Axis.horizontal,
     child: DataTable(
@@ -176,8 +229,8 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
         DataColumn(label: Text(AdminCopy.name)),
         DataColumn(label: Text(AdminCopy.emailAndPhone)),
         DataColumn(label: Text(AdminCopy.role)),
-        DataColumn(label: Text(AdminCopy.verify)),
         DataColumn(label: Text(AdminCopy.actions)),
+        DataColumn(label: Text(AdminCopy.verify)),
       ],
       rows: [
         for (final user in users)
@@ -186,24 +239,24 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
               DataCell(Text(user.name)),
               DataCell(
                 SizedBox(
-                  width: 210,
+                  width: AppLayout.contactColumnWidth,
                   child: Text(
                     '${user.email}\n${user.phone.isEmpty ? AdminCopy.phoneUnavailable : user.phone}',
                   ),
                 ),
               ),
+              DataCell(RoleBadge(label: user.role.name)),
+              DataCell(_userActions(user)),
               DataCell(
-                Wrap(
-                  spacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _roleBadge(context, user.role),
-                    _userRoleMenu(user),
-                  ],
+                StatusBadge(
+                  status: user.isVerified
+                      ? AdminStatusKind.verified
+                      : AdminStatusKind.unverified,
+                  label: user.isVerified
+                      ? AdminCopy.verified
+                      : AdminCopy.unverified,
                 ),
               ),
-              DataCell(_verificationControl(user)),
-              DataCell(_userActions(user)),
             ],
           ),
       ],
@@ -212,7 +265,7 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
 
   Widget _userCard(AdminUserRecord user) => Card(
     child: Padding(
-      padding: const EdgeInsets.all(16),
+      padding: AppInsets.phonePage,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -224,19 +277,26 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
-              _roleBadge(context, user.role),
+              RoleBadge(label: user.role.name),
             ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.xxs),
           Text(user.email),
           Text(user.phone.isEmpty ? AdminCopy.phoneUnavailable : user.phone),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Wrap(
-            spacing: 8,
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              _verificationControl(user),
-              _userRoleMenu(user),
+              StatusBadge(
+                status: user.isVerified
+                    ? AdminStatusKind.verified
+                    : AdminStatusKind.unverified,
+                label: user.isVerified
+                    ? AdminCopy.verified
+                    : AdminCopy.unverified,
+              ),
               _userActions(user),
             ],
           ),
@@ -245,56 +305,54 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
     ),
   );
 
-  Widget _roleBadge(BuildContext context, UserRole role) =>
-      Chip(label: Text(role.name), visualDensity: VisualDensity.compact);
-
-  Widget _verificationControl(AdminUserRecord user) => TextButton.icon(
-    onPressed: _busyUid == user.uid ? null : () => _changeVerification(user),
-    icon: Icon(user.isVerified ? Icons.verified : Icons.verified_outlined),
-    label: Text(user.isVerified ? AdminCopy.verified : AdminCopy.unverified),
-  );
-
-  Widget _userRoleMenu(AdminUserRecord user) {
-    if (user.role == UserRole.admin) {
-      return Text(AdminCopy.roleManagedByBootstrap);
-    }
-    return PopupMenuButton<UserRole>(
-      enabled: _busyUid != user.uid,
-      tooltip: AdminCopy.changeRole,
-      onSelected: (role) => _changeRole(user, role),
-      itemBuilder: (context) => [
+  Widget _userActions(AdminUserRecord user) => PopupMenuButton<String>(
+    tooltip: AdminCopy.actions,
+    enabled: _busyUid != user.uid,
+    onSelected: (action) {
+      if (action == 'verify') _changeVerification(user);
+      if (action == 'edit') _editProfile(user);
+      if (action == 'delete') _deleteProfile(user);
+      if (action.startsWith('role:')) {
+        final roleName = action.substring('role:'.length);
+        final role = UserRole.values.firstWhere(
+          (candidate) => candidate.name == roleName,
+        );
+        _changeRole(user, role);
+      }
+    },
+    itemBuilder: (context) => [
+      if (user.role != UserRole.admin) ...[
+        const PopupMenuItem<String>(
+          enabled: false,
+          child: Text(AdminCopy.changeRole),
+        ),
         for (final role in const [
           UserRole.tenant,
           UserRole.landlord,
           UserRole.provider,
         ])
-          PopupMenuItem<UserRole>(
-            value: role,
+          PopupMenuItem<String>(
+            value: 'role:${role.name}',
             enabled: role != user.role,
             child: Text(role.name),
           ),
       ],
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.manage_accounts_outlined),
-          const SizedBox(width: 4),
-          Text(AdminCopy.changeRole),
-        ],
+      PopupMenuItem<String>(
+        value: 'verify',
+        child: Text(
+          user.isVerified ? AdminCopy.unverified : AdminCopy.verified,
+        ),
       ),
-    );
-  }
-
-  Widget _userActions(AdminUserRecord user) => PopupMenuButton<String>(
-    tooltip: AdminCopy.actions,
-    enabled: _busyUid != user.uid && user.role != UserRole.admin,
-    onSelected: (action) {
-      if (action == 'edit') _editProfile(user);
-      if (action == 'delete') _deleteProfile(user);
-    },
-    itemBuilder: (context) => const [
-      PopupMenuItem(value: 'edit', child: Text(AdminCopy.editProfile)),
-      PopupMenuItem(value: 'delete', child: Text(AdminCopy.deleteProfile)),
+      if (user.role != UserRole.admin) ...[
+        const PopupMenuItem<String>(
+          value: 'edit',
+          child: Text(AdminCopy.editProfile),
+        ),
+        const PopupMenuItem<String>(
+          value: 'delete',
+          child: Text(AdminCopy.deleteProfile),
+        ),
+      ],
     ],
     icon: const Icon(Icons.more_vert),
   );
@@ -306,6 +364,7 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text(AdminCopy.editProfile),
+        scrollable: true,
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -316,9 +375,7 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
             TextField(
               controller: phoneController,
               keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: AdminCopy.phone,
-              ),
+              decoration: const InputDecoration(labelText: AdminCopy.phone),
             ),
           ],
         ),
@@ -328,10 +385,10 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
             child: const Text(AdminCopy.cancel),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(
-              context,
-              (nameController.text.trim(), phoneController.text.trim()),
-            ),
+            onPressed: () => Navigator.pop(context, (
+              nameController.text.trim(),
+              phoneController.text.trim(),
+            )),
             child: const Text(AdminCopy.confirm),
           ),
         ],
@@ -347,11 +404,9 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
     }
     await _perform(
       user.uid,
-      () => ref.read(adminRepositoryProvider).updateUserProfile(
-        uid: user.uid,
-        name: values.$1,
-        phone: phone,
-      ),
+      () => ref
+          .read(adminRepositoryProvider)
+          .updateUserProfile(uid: user.uid, name: values.$1, phone: phone),
       successMessage: AdminCopy.profileSaved,
     );
   }
@@ -372,7 +427,7 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
 
   Widget _pageControls({required bool canPrevious, required bool canNext}) =>
       Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -472,22 +527,12 @@ Future<bool?> _confirm(
   BuildContext context, {
   required String title,
   required String details,
-}) => showDialog<bool>(
-  context: context,
-  builder: (context) => AlertDialog(
-    title: Text(title),
-    content: Text(details),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context, false),
-        child: const Text(AdminCopy.cancel),
-      ),
-      FilledButton(
-        onPressed: () => Navigator.pop(context, true),
-        child: const Text(AdminCopy.confirm),
-      ),
-    ],
-  ),
+}) => ConfirmDialog.show(
+  context,
+  title: title,
+  details: details,
+  cancelLabel: AdminCopy.cancel,
+  confirmLabel: AdminCopy.confirm,
 );
 
 String _errorMessage(Object? error) =>

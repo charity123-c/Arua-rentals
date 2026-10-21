@@ -3,22 +3,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/errors/app_exception.dart';
+import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/admin_widgets.dart';
+import '../../../core/widgets/app_network_image.dart';
 import '../../../core/utils/phone_normalizer.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/loading_view.dart';
 import '../../auth/data/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../data/app_config.dart';
+import '../../admin/presentation/admin_copy.dart';
 import 'app_config_providers.dart';
 import '../data/listing.dart';
 import 'listing_copy.dart';
 import 'listings_providers.dart';
 
 class ListingFormScreen extends ConsumerStatefulWidget {
-  const ListingFormScreen({
-    this.listing,
-    this.adminMode = false,
-    super.key,
-  });
+  const ListingFormScreen({this.listing, this.adminMode = false, super.key});
 
   final Listing? listing;
   final bool adminMode;
@@ -72,11 +73,11 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
       _bedroomsController,
       _bathroomsController,
       _phoneController,
-      _imageUrlsController,
       _ownerIdController,
     ]) {
       controller.addListener(_markDirty);
     }
+    _imageUrlsController.addListener(_markImageUrlsDirty);
   }
 
   @override
@@ -97,10 +98,15 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
     if (!_isDirty && mounted) setState(() => _isDirty = true);
   }
 
+  void _markImageUrlsDirty() {
+    if (mounted) setState(() => _isDirty = true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUser = ref.watch(currentAppUserProvider).asData?.value;
-    final isAdmin = widget.adminMode &&
+    final isAdmin =
+        widget.adminMode &&
         currentUser?.hasAdminClaim == true &&
         currentUser?.role == UserRole.admin;
     return PopScope(
@@ -113,214 +119,410 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text(_isEditing ? ListingCopy.editTitle : ListingCopy.createTitle),
-        ),
-        body: ref.watch(appConfigProvider).when(
-          loading: () => const LoadingView(),
-          error: (error, stackTrace) => ErrorView(
-            message: error is AppException
-                ? error.message
-                : ListingCopy.invalidOwner,
-            retryLabel: ListingCopy.save,
-            onRetry: () => ref.invalidate(appConfigProvider),
-          ),
-          data: (config) => Form(
-          key: _formKey,
-          child: ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              _textField(
-                controller: _titleController,
-                label: ListingCopy.title,
-                maxLength: 100,
-                validator: _required,
-              ),
-              _textField(
-                controller: _descriptionController,
-                label: ListingCopy.description,
-                maxLength: 3000,
-                maxLines: 5,
-                validator: _required,
-              ),
-              DropdownButtonFormField<ListingType>(
-                initialValue: _type,
-                decoration: const InputDecoration(labelText: ListingCopy.type),
-                items: const [
-                  DropdownMenuItem(
-                    value: ListingType.property,
-                    child: Text(ListingCopy.property),
-                  ),
-                  DropdownMenuItem(
-                    value: ListingType.service,
-                    child: Text(ListingCopy.service),
-                  ),
-                ],
-                onChanged: _isSaving
-                    ? null
-                    : (value) {
-                        if (value == null) return;
-                        setState(() {
-                          _type = value;
-                          _isDirty = true;
-                        });
-                      },
-              ),
-              DropdownButtonFormField<String>(
-                initialValue: _validOrNull(
-                  _category,
-                  config.activeCategoryLabels,
-                ),
-                decoration: const InputDecoration(
-                  labelText: ListingCopy.category,
-                ),
-                validator: (value) => value == null ? ListingCopy.required : null,
-                items: [
-                  for (final category in config.activeCategoryLabels)
-                    DropdownMenuItem(value: category, child: Text(category)),
-                ],
-                onChanged: _isSaving
-                    ? null
-                    : (value) => setState(() {
-                        _category = value;
-                        _isDirty = true;
-                      }),
-              ),
-              DropdownButtonFormField<String>(
-                initialValue: _validOrNull(_area, config.activeAreaLabels),
-                decoration: const InputDecoration(labelText: ListingCopy.area),
-                validator: (value) => value == null ? ListingCopy.required : null,
-                items: [
-                  for (final area in config.activeAreaLabels)
-                    DropdownMenuItem(value: area, child: Text(area)),
-                ],
-                onChanged: _isSaving
-                    ? null
-                    : (value) => setState(() {
-                        _area = value;
-                        _isDirty = true;
-                      }),
-              ),
-              _textField(
-                controller: _priceController,
-                label: ListingCopy.price,
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  final parsed = int.tryParse(value?.trim() ?? '');
-                  return parsed == null || parsed <= 0
-                      ? ListingCopy.invalidPrice
-                      : null;
-                },
-              ),
-              DropdownButtonFormField<ListingPriceUnit>(
-                initialValue: _priceUnit,
-                decoration: const InputDecoration(
-                  labelText: ListingCopy.priceUnit,
-                ),
-                items: [
-                  for (final unit in ListingPriceUnit.values)
-                    DropdownMenuItem(
-                      value: unit,
-                      child: Text(unit.name),
-                    ),
-                ],
-                onChanged: _isSaving
-                    ? null
-                    : (value) {
-                        if (value == null) return;
-                        setState(() {
-                          _priceUnit = value;
-                          _isDirty = true;
-                        });
-                      },
-              ),
-              if (_type == ListingType.property) ...[
-                _textField(
-                  controller: _bedroomsController,
-                  label: ListingCopy.bedrooms,
-                  keyboardType: TextInputType.number,
-                  validator: _optionalPositiveInt,
-                ),
-                _textField(
-                  controller: _bathroomsController,
-                  label: ListingCopy.bathrooms,
-                  keyboardType: TextInputType.number,
-                  validator: _optionalPositiveInt,
-                ),
-              ],
-              Text(ListingCopy.amenities, style: Theme.of(context).textTheme.titleMedium),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _amenityController,
-                      decoration: const InputDecoration(
-                        labelText: ListingCopy.addAmenity,
-                      ),
-                      onSubmitted: (_) => _addAmenity(),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: ListingCopy.addAmenity,
-                    onPressed: _isSaving ? null : _addAmenity,
-                    icon: const Icon(Icons.add),
-                  ),
-                ],
-              ),
-              Wrap(
-                spacing: 8,
-                children: [
-                  for (final amenity in _amenities)
-                    InputChip(
-                      label: Text(amenity),
-                      onDeleted: _isSaving
-                          ? null
-                          : () => setState(() {
-                              _amenities.remove(amenity);
-                              _isDirty = true;
-                            }),
-                    ),
-                ],
-              ),
-              _textField(
-                controller: _phoneController,
-                label: ListingCopy.contactPhone,
-                keyboardType: TextInputType.phone,
-                validator: (value) => normalizeUgandanPhone(value ?? '') == null
-                    ? ListingCopy.invalidPhone
-                    : null,
-              ),
-              _textField(
-                controller: _imageUrlsController,
-                label: ListingCopy.imageUrls,
-                helperText: ListingCopy.imageUrlHelp,
-                maxLines: 3,
-              ),
-              if (isAdmin && !_isEditing)
-                _textField(
-                  controller: _ownerIdController,
-                  label: ListingCopy.ownerId,
-                  validator: (value) => value == null || value.trim().isEmpty
-                      ? ListingCopy.invalidOwner
-                      : null,
-                ),
-              if (isAdmin && !_isEditing)
-                const Padding(
-                  padding: EdgeInsets.only(top: 4),
-                  child: Text(ListingCopy.adminCreateApproved),
-                ),
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: _isSaving ? null : () => _save(isAdmin),
-                child: _isSaving
-                    ? const CircularProgressIndicator()
-                    : const Text(ListingCopy.save),
-              ),
-            ],
+          title: Text(
+            _isEditing ? ListingCopy.editTitle : ListingCopy.createTitle,
           ),
         ),
-        ),
+        body: ref
+            .watch(appConfigProvider)
+            .when(
+              loading: () => widget.adminMode
+                  ? const AdminLoadingList(itemCount: 4)
+                  : const LoadingView(),
+              error: (error, stackTrace) {
+                final message = error is AppException
+                    ? error.message
+                    : ListingCopy.invalidOwner;
+                return widget.adminMode
+                    ? AdminErrorState(
+                        message: message,
+                        retryLabel: ListingCopy.retry,
+                        onRetry: () => ref.invalidate(appConfigProvider),
+                      )
+                    : ErrorView(
+                        message: message,
+                        retryLabel: ListingCopy.retry,
+                        onRetry: () => ref.invalidate(appConfigProvider),
+                      );
+              },
+              data: (config) => widget.adminMode
+                  ? _adminForm(config, isAdmin)
+                  : _legacyForm(config, isAdmin),
+            ),
       ),
     );
+  }
+
+  Widget _adminForm(AppConfig config, bool isAdmin) => Form(
+    key: _formKey,
+    child: Column(
+      children: [
+        Expanded(
+          child: AdminContent(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final columns = constraints.maxWidth >= AppLayout.wideBreakpoint
+                    ? 2
+                    : 1;
+                final width = columns == 1
+                    ? constraints.maxWidth
+                    : (constraints.maxWidth - AppSpacing.md) / columns;
+                return ListView(
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                  children: [
+                    Wrap(
+                      spacing: AppSpacing.md,
+                      runSpacing: AppSpacing.md,
+                      children: [
+                        SizedBox(width: width, child: _basicsSection()),
+                        SizedBox(width: width, child: _priceSection()),
+                        SizedBox(width: width, child: _locationSection(config)),
+                        SizedBox(width: width, child: _detailsSection()),
+                        SizedBox(width: width, child: _photosSection()),
+                        SizedBox(width: width, child: _contactSection(isAdmin)),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+        SafeArea(
+          top: false,
+          child: Material(
+            elevation: AppElevation.medium,
+            color: Theme.of(context).colorScheme.surface,
+            child: Padding(
+              padding: AppInsets.phonePage,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _isSaving ? null : _cancel,
+                      child: const Text(ListingCopy.cancel),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: _isSaving ? null : () => _save(isAdmin),
+                      child: _isSaving
+                          ? const SizedBox.square(
+                              dimension: AppSpacing.lg,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text(ListingCopy.save),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _legacyForm(AppConfig config, bool isAdmin) => Form(
+    key: _formKey,
+    child: ListView(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      children: [
+        _basicsFields(),
+        _listingTypeField(),
+        _categoryField(config),
+        _areaField(config),
+        _priceField(),
+        _priceUnitField(),
+        _bedroomFields(),
+        _amenitiesEditor(),
+        _phoneField(),
+        _imageUrlsField(),
+        if (isAdmin && !_isEditing) _ownerIdField(),
+        if (isAdmin && !_isEditing)
+          const Padding(
+            padding: EdgeInsets.only(top: AppSpacing.xxs),
+            child: Text(ListingCopy.adminCreateApproved),
+          ),
+        FilledButton(
+          onPressed: _isSaving ? null : () => _save(isAdmin),
+          child: _isSaving
+              ? const CircularProgressIndicator()
+              : const Text(ListingCopy.save),
+        ),
+      ],
+    ),
+  );
+
+  Widget _basicsSection() =>
+      AdminSectionCard(title: AdminCopy.basics, child: _basicsFields());
+
+  Widget _basicsFields() => Column(
+    children: [
+      _textField(
+        controller: _titleController,
+        label: ListingCopy.title,
+        maxLength: 100,
+        validator: _required,
+      ),
+      _textField(
+        controller: _descriptionController,
+        label: ListingCopy.description,
+        maxLength: 3000,
+        maxLines: 5,
+        validator: _required,
+      ),
+    ],
+  );
+
+  Widget _priceSection() => AdminSectionCard(
+    title: AdminCopy.priceAndType,
+    child: Column(
+      children: [_listingTypeField(), _priceField(), _priceUnitField()],
+    ),
+  );
+
+  Widget _locationSection(AppConfig config) => AdminSectionCard(
+    title: AdminCopy.location,
+    child: Column(children: [_categoryField(config), _areaField(config)]),
+  );
+
+  Widget _detailsSection() => AdminSectionCard(
+    title: AdminCopy.details,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [_bedroomFields(), _amenitiesEditor()],
+    ),
+  );
+
+  Widget _photosSection() => AdminSectionCard(
+    title: AdminCopy.photos,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _imageUrlsField(),
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children: [
+            for (final url
+                in _imageUrlsController.text
+                    .split(RegExp(r'[\r\n]+'))
+                    .map((value) => value.trim())
+                    .where((value) => value.isNotEmpty)
+                    .take(8))
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                child: AppNetworkImage(
+                  imageUrl: url,
+                  semanticLabel: AdminCopy.imagePreview,
+                  width: AppLayout.imagePreviewSize,
+                  height: AppLayout.imagePreviewSize,
+                ),
+              ),
+          ],
+        ),
+      ],
+    ),
+  );
+
+  Widget _contactSection(bool isAdmin) => AdminSectionCard(
+    title: AdminCopy.contact,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _phoneField(),
+        if (isAdmin && !_isEditing) ...[
+          _ownerIdField(),
+          Text(
+            ListingCopy.adminCreateApproved,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ],
+    ),
+  );
+
+  Widget _listingTypeField() => DropdownButtonFormField<ListingType>(
+    initialValue: _type,
+    decoration: const InputDecoration(labelText: ListingCopy.type),
+    items: const [
+      DropdownMenuItem(
+        value: ListingType.property,
+        child: Text(ListingCopy.property),
+      ),
+      DropdownMenuItem(
+        value: ListingType.service,
+        child: Text(ListingCopy.service),
+      ),
+    ],
+    onChanged: _isSaving
+        ? null
+        : (value) {
+            if (value == null) return;
+            setState(() {
+              _type = value;
+              _isDirty = true;
+            });
+          },
+  );
+
+  Widget _categoryField(AppConfig config) => DropdownButtonFormField<String>(
+    initialValue: _validOrNull(_category, config.activeCategoryLabels),
+    decoration: const InputDecoration(labelText: ListingCopy.category),
+    validator: (value) => value == null ? ListingCopy.required : null,
+    items: [
+      for (final category in config.activeCategoryLabels)
+        DropdownMenuItem(value: category, child: Text(category)),
+    ],
+    onChanged: _isSaving
+        ? null
+        : (value) => setState(() {
+            _category = value;
+            _isDirty = true;
+          }),
+  );
+
+  Widget _areaField(AppConfig config) => DropdownButtonFormField<String>(
+    initialValue: _validOrNull(_area, config.activeAreaLabels),
+    decoration: const InputDecoration(labelText: ListingCopy.area),
+    validator: (value) => value == null ? ListingCopy.required : null,
+    items: [
+      for (final area in config.activeAreaLabels)
+        DropdownMenuItem(value: area, child: Text(area)),
+    ],
+    onChanged: _isSaving
+        ? null
+        : (value) => setState(() {
+            _area = value;
+            _isDirty = true;
+          }),
+  );
+
+  Widget _priceField() => _textField(
+    controller: _priceController,
+    label: ListingCopy.price,
+    keyboardType: TextInputType.number,
+    validator: (value) {
+      final parsed = int.tryParse(value?.trim() ?? '');
+      return parsed == null || parsed <= 0 ? ListingCopy.invalidPrice : null;
+    },
+  );
+
+  Widget _priceUnitField() => DropdownButtonFormField<ListingPriceUnit>(
+    initialValue: _priceUnit,
+    decoration: const InputDecoration(labelText: ListingCopy.priceUnit),
+    items: [
+      for (final unit in ListingPriceUnit.values)
+        DropdownMenuItem(value: unit, child: Text(unit.name)),
+    ],
+    onChanged: _isSaving
+        ? null
+        : (value) {
+            if (value == null) return;
+            setState(() {
+              _priceUnit = value;
+              _isDirty = true;
+            });
+          },
+  );
+
+  Widget _bedroomFields() => _type == ListingType.property
+      ? Column(
+          children: [
+            _textField(
+              controller: _bedroomsController,
+              label: ListingCopy.bedrooms,
+              keyboardType: TextInputType.number,
+              validator: _optionalPositiveInt,
+            ),
+            _textField(
+              controller: _bathroomsController,
+              label: ListingCopy.bathrooms,
+              keyboardType: TextInputType.number,
+              validator: _optionalPositiveInt,
+            ),
+          ],
+        )
+      : const SizedBox.shrink();
+
+  Widget _amenitiesEditor() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        ListingCopy.amenities,
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
+      Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _amenityController,
+              decoration: const InputDecoration(
+                labelText: ListingCopy.addAmenity,
+              ),
+              onSubmitted: (_) => _addAmenity(),
+            ),
+          ),
+          IconButton(
+            tooltip: ListingCopy.addAmenity,
+            onPressed: _isSaving ? null : _addAmenity,
+            icon: const Icon(Icons.add),
+          ),
+        ],
+      ),
+      Wrap(
+        spacing: AppSpacing.xs,
+        runSpacing: AppSpacing.xs,
+        children: [
+          for (final amenity in _amenities)
+            InputChip(
+              label: Text(amenity),
+              onDeleted: _isSaving
+                  ? null
+                  : () => setState(() {
+                      _amenities.remove(amenity);
+                      _isDirty = true;
+                    }),
+            ),
+        ],
+      ),
+    ],
+  );
+
+  Widget _phoneField() => _textField(
+    controller: _phoneController,
+    label: ListingCopy.contactPhone,
+    keyboardType: TextInputType.phone,
+    validator: (value) => normalizeUgandanPhone(value ?? '') == null
+        ? ListingCopy.invalidPhone
+        : null,
+  );
+
+  Widget _imageUrlsField() => _textField(
+    controller: _imageUrlsController,
+    label: ListingCopy.imageUrls,
+    helperText: ListingCopy.imageUrlHelp,
+    maxLines: 3,
+  );
+
+  Widget _ownerIdField() => _textField(
+    controller: _ownerIdController,
+    label: ListingCopy.ownerId,
+    validator: (value) =>
+        value == null || value.trim().isEmpty ? ListingCopy.invalidOwner : null,
+  );
+
+  Future<void> _cancel() async {
+    if (_isSaving) return;
+    if (!_isDirty) {
+      context.pop(false);
+      return;
+    }
+    final discard = await _confirmDiscard();
+    if (!mounted) return;
+    if (discard) context.pop(false);
   }
 
   Widget _textField({
@@ -332,7 +534,7 @@ class _ListingFormScreenState extends ConsumerState<ListingFormScreen> {
     TextInputType? keyboardType,
     String? Function(String?)? validator,
   }) => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
     child: TextFormField(
       controller: controller,
       enabled: !_isSaving,

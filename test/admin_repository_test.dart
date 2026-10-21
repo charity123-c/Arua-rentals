@@ -157,4 +157,50 @@ void main() {
       'tenant',
     );
   });
+
+  test('verification syncs the profile and every owned listing in chunks', () async {
+    const ownerId = 'verified-owner';
+    await firestore.collection('users').doc(ownerId).set({
+      'isVerified': false,
+    });
+    final listings = firestore.collection('listings');
+    for (var index = 0; index < 401; index++) {
+      await listings.doc('owned-$index').set({
+        'ownerId': ownerId,
+        'ownerVerified': false,
+      });
+    }
+    await listings.doc('not-owned').set({
+      'ownerId': 'another-owner',
+      'ownerVerified': false,
+    });
+
+    await repository.setUserVerified(ownerId, true);
+
+    expect(
+      (await firestore.collection('users').doc(ownerId).get()).get('isVerified'),
+      isTrue,
+    );
+    for (var index = 0; index < 401; index++) {
+      expect(
+        (await listings.doc('owned-$index').get()).get('ownerVerified'),
+        isTrue,
+      );
+    }
+    expect((await listings.doc('not-owned').get()).get('ownerVerified'), isFalse);
+  });
+
+  test('verification status is updated even when the user has no listings', () async {
+    await firestore.collection('users').doc('unlisted-owner').set({
+      'isVerified': false,
+    });
+
+    await repository.setUserVerified('unlisted-owner', true);
+
+    expect(
+      (await firestore.collection('users').doc('unlisted-owner').get())
+          .get('isVerified'),
+      isTrue,
+    );
+  });
 }

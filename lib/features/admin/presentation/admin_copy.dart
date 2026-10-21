@@ -1,5 +1,34 @@
 abstract final class AdminCopy {
   static const title = 'Admin dashboard';
+  static const overviewSubtitle =
+      'A quick view of activity that needs attention.';
+  static const roleRequestsSubtitle =
+      'Review requests to become a landlord or service provider.';
+  static const usersSubtitle = 'Search accounts and manage profile access.';
+  static const listingsSubtitle =
+      'Review listing status and manage marketplace content.';
+  static const more = 'More';
+  static const manageListings = 'Manage listings';
+  static const settings = 'Settings';
+  static const needsAttention = 'Needs attention';
+  static const reviewRequests = 'Review requests';
+  static const reviewListings = 'Review listings';
+  static const filterRole = 'Role';
+  static const allRoles = 'All roles';
+  static const allStatuses = 'All statuses';
+  static const status = 'Status';
+  static const category = 'Category';
+  static const area = 'Area';
+  static const owner = 'Owner';
+  static const date = 'Date';
+  static const basics = 'Basics';
+  static const priceAndType = 'Price & type';
+  static const location = 'Location';
+  static const details = 'Details';
+  static const photos = 'Photos';
+  static const contact = 'Contact';
+  static const imagePreview = 'Image preview';
+  static const loadMore = 'Load more';
   static const overview = 'Overview';
   static const roleRequests = 'Role requests';
   static const users = 'Users';

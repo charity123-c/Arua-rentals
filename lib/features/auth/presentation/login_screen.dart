@@ -116,12 +116,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
-                      onPressed: () => context.go('/forgot-password'),
+                      onPressed: () => context.go(_authLocation(
+                        context,
+                        '/forgot-password',
+                      )),
                       child: const Text('Forgot password?'),
                     ),
                   ),
                   TextButton(
-                    onPressed: () => context.go('/register'),
+                    onPressed: () => context.go(
+                      _authLocation(context, '/register'),
+                    ),
                     child: const Text('Create an account'),
                   ),
                 ],
@@ -131,5 +136,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ),
       ),
     );
+  }
+
+  String _authLocation(BuildContext context, String path) {
+    final redirect = GoRouterState.of(context).uri.queryParameters['redirect'];
+    return Uri(
+      path: path,
+      queryParameters: redirect == null ? null : {'redirect': redirect},
+    ).toString();
   }
 }

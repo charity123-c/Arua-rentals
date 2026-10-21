@@ -14,12 +14,12 @@ class ListingPage {
   final DocumentSnapshot<Map<String, dynamic>>? lastDocument;
 }
 
+enum ListingSort { newest, priceLowToHigh, priceHighToLow }
+
 class ListingsRepository {
-  ListingsRepository({
-    FirebaseFirestore? firestore,
-    FirebaseAuth? firebaseAuth,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance,
-       _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
+  ListingsRepository({FirebaseFirestore? firestore, FirebaseAuth? firebaseAuth})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _firebaseAuth;
@@ -53,15 +53,13 @@ class ListingsRepository {
         ownerPhone: listing.ownerPhone.trim().isEmpty
             ? _stringField(profileData, 'phone')
             : listing.ownerPhone,
+        ownerVerified: _boolField(profileData, 'isVerified'),
       );
       final status = isAdmin ? ListingStatus.approved : ListingStatus.pending;
       final keywords = _keywords(created);
-      await _listings.doc(created.id).set(
-        created.toFirestore(
-          status: status,
-          searchKeywords: keywords,
-        ),
-      );
+      await _listings
+          .doc(created.id)
+          .set(created.toFirestore(status: status, searchKeywords: keywords));
       return created.copyWith(status: status, searchKeywords: keywords);
     } on FirebaseException catch (error) {
       throw mapFirestoreException(error);
@@ -83,6 +81,7 @@ class ListingsRepository {
     String? category,
     String? area,
     String? keyword,
+    ListingSort sort = ListingSort.newest,
   }) => _getPage(
     _listings.where('status', isEqualTo: ListingStatus.approved.name),
     limit: limit,
@@ -90,7 +89,23 @@ class ListingsRepository {
     category: category,
     area: area,
     keyword: keyword,
+    sort: sort,
   );
+
+  Future<List<Listing>> getFeaturedListings({int limit = 8}) async {
+    final pageLimit = _pageLimit(limit);
+    try {
+      final snapshot = await _listings
+          .where('status', isEqualTo: ListingStatus.approved.name)
+          .where('isFeatured', isEqualTo: true)
+          .orderBy('createdAt', descending: true)
+          .limit(pageLimit)
+          .get();
+      return snapshot.docs.map(Listing.fromFirestore).toList(growable: false);
+    } on FirebaseException catch (error) {
+      throw mapFirestoreException(error);
+    }
+  }
 
   Future<ListingPage> getOwnerListings({
     int limit = 20,
@@ -130,9 +145,9 @@ class ListingsRepository {
           arrayContains: keyword.trim().toLowerCase(),
         );
       }
-      query = query.orderBy('createdAt', descending: true).limit(
-        _pageLimit(limit),
-      );
+      query = query
+          .orderBy('createdAt', descending: true)
+          .limit(_pageLimit(limit));
       if (startAfter != null) query = query.startAfterDocument(startAfter);
       return _listingPage(await query.get());
     } on FirebaseException catch (error) {
@@ -157,6 +172,7 @@ class ListingsRepository {
         ratingAvg: existing.ratingAvg,
         ratingCount: existing.ratingCount,
         isFeatured: existing.isFeatured,
+        ownerVerified: existing.ownerVerified,
       );
       final status = isAdmin ? existing.status : ListingStatus.pending;
       final keywords = _keywords(updated);
@@ -241,9 +257,12 @@ class ListingsRepository {
     String? category,
     String? area,
     String? keyword,
+    ListingSort sort = ListingSort.newest,
   }) async {
     try {
-      if (category != null) query = query.where('category', isEqualTo: category);
+      if (category != null) {
+        query = query.where('category', isEqualTo: category);
+      }
       if (area != null) query = query.where('area', isEqualTo: area);
       if (keyword != null && keyword.trim().isNotEmpty) {
         query = query.where(
@@ -251,15 +270,26 @@ class ListingsRepository {
           arrayContains: keyword.trim().toLowerCase(),
         );
       }
-      query = query.orderBy('createdAt', descending: true).limit(
-        _pageLimit(limit),
-      );
+      query = _orderedQuery(query, sort).limit(_pageLimit(limit));
       if (startAfter != null) query = query.startAfterDocument(startAfter);
       return _listingPage(await query.get());
     } on FirebaseException catch (error) {
       throw mapFirestoreException(error);
     }
   }
+
+  Query<Map<String, dynamic>> _orderedQuery(
+    Query<Map<String, dynamic>> query,
+    ListingSort sort,
+  ) => switch (sort) {
+    ListingSort.newest => query.orderBy('createdAt', descending: true),
+    ListingSort.priceLowToHigh =>
+      query.orderBy('priceUgx').orderBy('createdAt', descending: true),
+    ListingSort.priceHighToLow =>
+      query
+          .orderBy('priceUgx', descending: true)
+          .orderBy('createdAt', descending: true),
+  };
 
   ListingPage _listingPage(QuerySnapshot<Map<String, dynamic>> snapshot) =>
       ListingPage(
@@ -300,6 +330,14 @@ class ListingsRepository {
   String _stringField(Map<String, dynamic> data, String field) {
     final value = data[field];
     if (value is! String) {
+      throw AppException('The listing owner profile has invalid $field data.');
+    }
+    return value;
+  }
+
+  bool _boolField(Map<String, dynamic> data, String field) {
+    final value = data[field];
+    if (value is! bool) {
       throw AppException('The listing owner profile has invalid $field data.');
     }
     return value;

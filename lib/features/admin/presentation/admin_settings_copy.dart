@@ -8,6 +8,10 @@ abstract final class AdminSettingsCopy {
   static const deactivate = 'Deactivate';
   static const activate = 'Activate';
   static const seedDefaults = 'Seed defaults';
+  static const seedDefaultsDescription =
+      'Restore the starter list of listing categories and Arua areas.';
+  static const settingsSubtitle =
+      'Keep the categories and areas available to listing owners up to date.';
   static const active = 'Active';
   static const inactive = 'Inactive';
   static const retry = 'Retry';

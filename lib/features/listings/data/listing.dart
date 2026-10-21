@@ -29,6 +29,7 @@ class Listing {
     required this.ratingAvg,
     required this.ratingCount,
     required this.isFeatured,
+    this.ownerVerified = false,
     this.titleLower,
     this.address,
     this.geo,
@@ -66,6 +67,7 @@ class Listing {
   final int ratingCount;
   final List<String> searchKeywords;
   final bool isFeatured;
+  final bool ownerVerified;
   final Timestamp? createdAt;
   final Timestamp? updatedAt;
 
@@ -114,6 +116,10 @@ class Listing {
     final price = requiredValue<num>('priceUgx');
     final ratingAvg = requiredValue<num>('ratingAvg');
     final ratingCount = requiredValue<num>('ratingCount');
+    final rawOwnerVerified = data['ownerVerified'];
+    if (rawOwnerVerified != null && rawOwnerVerified is! bool) {
+      throw const AppException('The listing contains invalid ownerVerified data.');
+    }
     final createdAt = optionalValue<Timestamp>('createdAt');
     final updatedAt = optionalValue<Timestamp>('updatedAt');
 
@@ -146,6 +152,7 @@ class Listing {
         searchKeywords.cast<String>(),
       ),
       isFeatured: requiredValue<bool>('isFeatured'),
+      ownerVerified: rawOwnerVerified == true,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );
@@ -180,6 +187,7 @@ class Listing {
     'ratingCount': ratingCount,
     'searchKeywords': searchKeywords,
     'isFeatured': isFeatured,
+    'ownerVerified': ownerVerified,
     'createdAt': createdAt ?? FieldValue.serverTimestamp(),
     'updatedAt': FieldValue.serverTimestamp(),
   };
@@ -210,6 +218,7 @@ class Listing {
     int? ratingCount,
     List<String>? searchKeywords,
     bool? isFeatured,
+    bool? ownerVerified,
     Timestamp? createdAt,
     Timestamp? updatedAt,
     bool clearRejectionReason = false,
@@ -241,6 +250,7 @@ class Listing {
     ratingCount: ratingCount ?? this.ratingCount,
     searchKeywords: searchKeywords ?? this.searchKeywords,
     isFeatured: isFeatured ?? this.isFeatured,
+    ownerVerified: ownerVerified ?? this.ownerVerified,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );

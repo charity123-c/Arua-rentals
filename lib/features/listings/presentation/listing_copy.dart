@@ -39,6 +39,7 @@ abstract final class ListingCopy {
   static const deleted = 'Listing deleted.';
   static const statusLive = 'Live';
   static const statusPending = 'Pending';
+  static const statusApproved = 'Approved';
   static const statusRejected = 'Rejected';
   static const retry = 'Retry';
   static const adminListings = 'Manage listings';
@@ -61,4 +62,83 @@ abstract final class ListingCopy {
   static const moderationReason = 'Rejection reason';
   static const imageUrlHelp =
       'Image upload uses URLs temporarily. Storage upload will be added after Blaze is enabled.';
+  static const appName = 'Arua City Finder';
+  static const searchPublicListings = 'Search homes and local services';
+  static const allCategories = 'All';
+  static const allAreas = 'All areas';
+  static const newest = 'Newest';
+  static const priceLowToHigh = 'Price: low to high';
+  static const priceHighToLow = 'Price: high to low';
+  static const clearFilters = 'Clear filters';
+  static const noListingsMatch = 'No listings match your search';
+  static const publicListingsError = 'Unable to load listings. Please try again.';
+  static const listingNotAvailable = 'This listing is not available.';
+  static const backToHome = 'Back to home';
+  static const posted = 'Posted';
+  static const comingSoon = 'Coming soon';
+  static const call = 'Call';
+  static const whatsapp = 'WhatsApp';
+  static const chat = 'Chat';
+  static const listingDetails = 'Listing details';
+  static const bedroomsLabel = 'Bedrooms';
+  static const bathroomsLabel = 'Bathrooms';
+  static const ratingLabel = 'rating';
+  static const profile = 'Profile';
+  static const login = 'Log in';
+  static const register = 'Register';
+  static const logout = 'Log out';
+  static const myListings = 'My listings';
+  static const admin = 'Admin';
+  static const favoriteComingSoon = 'Favorites are coming soon';
+  static const actionFailed = 'Unable to open this link.';
+  static const previewPublicSite = 'Preview public site';
+  static const verified = 'Verified';
+  static const perMonth = 'month';
+  static const perJob = 'job';
+  static const perHour = 'hour';
+  static const fixedPrice = 'fixed';
+  static const failedToSignOut = 'Unable to log out.';
+  static const chooseSort = 'Sort listings';
+  static const categoryLabel = 'Category';
+  static const areaLabel = 'Area';
+  static const noImages = 'No images available';
+  static const noDescription = 'No description provided.';
+  static const pendingApproval = 'Pending approval';
+  static const amenityLabel = 'Amenities';
+  static const listingRating = 'Listing rating';
+  static const goToAdmin = 'Open admin dashboard';
+  static const browseListings = 'Browse listings';
+  static const imageIndicator = 'Image';
+  static const clearSearch = 'Clear search';
+  static const details = 'Details';
+  static const signInPromptTitle = 'Sign in to continue';
+  static const signInPromptMessage =
+      'Create an account or log in to use this feature.';
+  static const rateListing = 'Rate this listing';
+  static const favoritesComingSoon = 'Favorites are coming soon.';
+  static const ratingsComingSoon = 'Ratings are coming soon.';
+  static const heroHeadline = 'Find a place to call home in Arua';
+  static const heroSubtext =
+      'Browse trusted rentals and local services, then contact providers directly.';
+  static const featuredListings = 'Featured';
+  static const latestListings = 'Latest listings';
+  static const listWithUsTitle = 'Are you a landlord or provider?';
+  static const listWithUsSubtitle =
+      'Reach people looking for homes and services in Arua City.';
+  static const listWithUsAction = 'List with us';
+  static const listAccessPending =
+      'Landlord and provider accounts need admin approval.';
+  static const about = 'About';
+  static const aboutText =
+      'Arua City Finder connects the community with local rentals and services.';
+  static const contact = 'Contact';
+  static const contactPlaceholder = 'Contact details coming soon';
+  static const terms = 'Terms';
+  static const termsPlaceholder = 'Terms and policies coming soon';
+  static const categoryIconDescription = 'Category';
+  static const featuredListingsError =
+      'Featured listings are temporarily unavailable.';
+  static const all = 'All listings';
+  static const fallbackCategory = 'Other';
+  static const browseByCategory = 'Browse by category';
 }
