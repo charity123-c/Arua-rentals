@@ -11,6 +11,7 @@ import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/shimmer_box.dart';
 import '../../auth/data/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../chat/presentation/chat_providers.dart';
 import '../data/app_config.dart';
 import 'app_config_providers.dart';
 import 'listing_card.dart';
@@ -758,7 +759,16 @@ class _ListingSkeleton extends StatelessWidget {
   );
 }
 
-enum _AccountAction { profile, listings, admin, logout, login, register }
+enum _AccountAction {
+  profile,
+  favorites,
+  inbox,
+  listings,
+  admin,
+  logout,
+  login,
+  register,
+}
 
 class _AccountActions extends ConsumerWidget {
   const _AccountActions({required this.user});
@@ -784,6 +794,7 @@ class _AccountActions extends ConsumerWidget {
     final isAdmin = user!.role == UserRole.admin && user!.hasAdminClaim;
     final canList =
         user!.role == UserRole.landlord || user!.role == UserRole.provider;
+    final unreadCount = ref.watch(totalUnreadChatsProvider);
     return PopupMenuButton<_AccountAction>(
       tooltip: ListingCopy.profile,
       onSelected: (action) => _selectAction(context, ref, action),
@@ -791,6 +802,19 @@ class _AccountActions extends ConsumerWidget {
         PopupMenuItem(
           value: _AccountAction.profile,
           child: Text(ListingCopy.profile),
+        ),
+        PopupMenuItem(
+          value: _AccountAction.favorites,
+          child: Text(ListingCopy.favorites),
+        ),
+        PopupMenuItem(
+          value: _AccountAction.inbox,
+          child: Row(
+            children: [
+              Expanded(child: Text(ListingCopy.inbox)),
+              if (unreadCount > 0) Badge(label: Text('$unreadCount')),
+            ],
+          ),
         ),
         if (canList)
           PopupMenuItem(
@@ -809,7 +833,11 @@ class _AccountActions extends ConsumerWidget {
       ],
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-        child: CircleAvatar(child: Text(_initial(user!.name))),
+        child: Badge(
+          isLabelVisible: unreadCount > 0,
+          label: Text('$unreadCount'),
+          child: CircleAvatar(child: Text(_initial(user!.name))),
+        ),
       ),
     );
   }
@@ -836,6 +864,10 @@ class _AccountActions extends ConsumerWidget {
         );
       case _AccountAction.listings:
         context.go('/provider');
+      case _AccountAction.favorites:
+        context.go('/favorites');
+      case _AccountAction.inbox:
+        context.go('/chat');
       case _AccountAction.admin:
         context.go('/admin');
       case _AccountAction.logout:

@@ -9,6 +9,7 @@ const {
 } = require('@firebase/rules-unit-testing');
 const {
   collection,
+  deleteDoc,
   doc,
   getDocs,
   getDoc,
@@ -261,6 +262,131 @@ test('listing reads are restricted to approved items, owners, or admins', async 
   );
 });
 
+test('favorite documents are private to their owner and have a fixed schema', async () => {
+  const ownerDb = testEnvironment
+    .authenticatedContext('favorite-owner')
+    .firestore();
+  const otherDb = testEnvironment
+    .authenticatedContext('other-user')
+    .firestore();
+  const favoriteData = {
+    listingId: 'saved-listing',
+    title: 'Saved Arua room',
+    thumbnailUrl: 'https://example.test/room.jpg',
+    priceUgx: 350000,
+    area: 'Oli',
+    createdAt: serverTimestamp(),
+  };
+  const ownerFavorite = doc(
+    ownerDb,
+    'favorites/favorite-owner/items/saved-listing',
+  );
+
+  await assertSucceeds(setDoc(ownerFavorite, favoriteData));
+  await assertSucceeds(getDoc(ownerFavorite));
+  await assertFails(
+    getDoc(doc(otherDb, 'favorites/favorite-owner/items/saved-listing')),
+  );
+  await assertFails(
+    setDoc(
+      doc(otherDb, 'favorites/favorite-owner/items/forged'),
+      { ...favoriteData, listingId: 'forged' },
+    ),
+  );
+  await assertFails(
+    setDoc(
+      doc(ownerDb, 'favorites/favorite-owner/items/extra-field'),
+      { ...favoriteData, listingId: 'extra-field', ownerId: 'forged' },
+    ),
+  );
+  await assertSucceeds(deleteDoc(ownerFavorite));
+});
+
+test('chat rooms and messages are limited to participants and validated', async () => {
+  await seedDocuments(async (db) => {
+    await setDoc(doc(db, 'listings/chat-listing'), {
+      ownerId: 'owner',
+      status: 'approved',
+    });
+  });
+  const aliceDb = testEnvironment.authenticatedContext('alice').firestore();
+  const ownerDb = testEnvironment.authenticatedContext('owner').firestore();
+  const outsiderDb = testEnvironment.authenticatedContext('outsider').firestore();
+  const roomId = 'alice_owner_chat-listing';
+  const aliceRoom = doc(aliceDb, `chat_rooms/${roomId}`);
+  const ownerRoom = doc(ownerDb, `chat_rooms/${roomId}`);
+  const outsiderRoom = doc(outsiderDb, `chat_rooms/${roomId}`);
+  const room = {
+    participants: ['alice', 'owner'],
+    listingId: 'chat-listing',
+    listingTitle: 'Arua room',
+    listingThumb: 'https://example.test/room.jpg',
+    lastMessage: '',
+    lastMessageId: '',
+    lastMessageAt: serverTimestamp(),
+    unreadCount: { alice: 0, owner: 0 },
+    createdAt: serverTimestamp(),
+  };
+
+  await assertSucceeds(setDoc(aliceRoom, room));
+  await assertSucceeds(getDoc(ownerRoom));
+  await assertFails(getDoc(outsiderRoom));
+
+  const validSend = writeBatch(aliceDb);
+  validSend.set(doc(aliceDb, `chat_rooms/${roomId}/messages/message-1`), {
+    senderId: 'alice',
+    text: 'Hello from Arua.',
+    createdAt: serverTimestamp(),
+  });
+  validSend.update(aliceRoom, {
+    lastMessage: 'Hello from Arua.',
+    lastMessageId: 'message-1',
+    lastMessageAt: serverTimestamp(),
+    unreadCount: { alice: 0, owner: 1 },
+  });
+  await assertSucceeds(validSend.commit());
+  await assertSucceeds(
+    getDoc(doc(ownerDb, `chat_rooms/${roomId}/messages/message-1`)),
+  );
+  await assertFails(
+    setDoc(doc(outsiderDb, `chat_rooms/${roomId}/messages/forged`), {
+      senderId: 'outsider',
+      text: 'Not a participant',
+      createdAt: serverTimestamp(),
+    }),
+  );
+  const overLimitSend = writeBatch(aliceDb);
+  const overLimitText = 'x'.repeat(1001);
+  overLimitSend.set(doc(aliceDb, `chat_rooms/${roomId}/messages/too-long`), {
+    senderId: 'alice',
+    text: overLimitText,
+    createdAt: serverTimestamp(),
+  });
+  overLimitSend.update(aliceRoom, {
+    lastMessage: overLimitText,
+    lastMessageId: 'too-long',
+    lastMessageAt: serverTimestamp(),
+    unreadCount: { alice: 0, owner: 2 },
+  });
+  await assertFails(overLimitSend.commit());
+
+  await assertSucceeds(
+    updateDoc(ownerRoom, {
+      unreadCount: { alice: 0, owner: 0 },
+    }),
+  );
+  await assertFails(
+    updateDoc(aliceRoom, {
+      unreadCount: { alice: 1, owner: 5 },
+    }),
+  );
+  await assertFails(
+    updateDoc(aliceRoom, {
+      participants: ['alice', 'outsider'],
+    }),
+  );
+});
+
 test('signed-out visitors can read approved listing queries and config only', async () => {
   await seedDocuments(async (db) => {
     await setDoc(doc(db, 'listings/public-approved'), listing('public-owner', 'approved'));
@@ -309,6 +435,31 @@ test('only landlord or provider profiles may create pending listings', async () 
   const tenantDb = testEnvironment.authenticatedContext('tenant').firestore();
   await assertFails(
     setDoc(doc(tenantDb, 'listings/tenant-listing'), listing('tenant', 'pending')),
+  );
+});
+
+test('admins can create approved or pending listings for another owner', async () => {
+  const adminDb = testEnvironment
+    .authenticatedContext('admin-creator', { admin: true })
+    .firestore();
+
+  await assertSucceeds(
+    setDoc(
+      doc(adminDb, 'listings/created-for-owner-approved'),
+      listing('target-owner', 'approved'),
+    ),
+  );
+  await assertSucceeds(
+    setDoc(
+      doc(adminDb, 'listings/created-for-owner-pending'),
+      listing('target-owner', 'pending'),
+    ),
+  );
+  await assertFails(
+    setDoc(
+      doc(adminDb, 'listings/created-for-owner-rejected'),
+      listing('target-owner', 'rejected'),
+    ),
   );
 });
 

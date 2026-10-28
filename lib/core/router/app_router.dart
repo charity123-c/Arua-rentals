@@ -11,6 +11,9 @@ import '../../features/auth/presentation/register_screen.dart';
 import '../../features/listings/presentation/provider_listings_screen.dart';
 import '../../features/listings/presentation/public_listings_screen.dart';
 import '../../features/listings/presentation/listing_detail_screen.dart';
+import '../../features/favorites/presentation/favorites_screen.dart';
+import '../../features/chat/presentation/chat_inbox_screen.dart';
+import '../../features/chat/presentation/chat_room_screen.dart';
 import 'role_access.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/loading_view.dart';
@@ -136,6 +139,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/provider',
         builder: (context, state) => const ProviderListingsScreen(),
+      ),
+      GoRoute(
+        path: '/favorites',
+        builder: (context, state) => const FavoritesScreen(),
+      ),
+      GoRoute(
+        path: '/chat',
+        builder: (context, state) => const ChatInboxScreen(),
+      ),
+      GoRoute(
+        path: '/chat/:roomId',
+        builder: (context, state) =>
+            ChatRoomScreen(roomId: state.pathParameters['roomId']!),
       ),
       GoRoute(
         path: '/admin',

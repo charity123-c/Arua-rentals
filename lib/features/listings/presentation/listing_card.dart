@@ -6,8 +6,8 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_network_image.dart';
 import '../data/listing.dart';
+import '../../favorites/presentation/favorite_button.dart';
 import 'listing_copy.dart';
-import 'sign_in_prompt.dart';
 
 class ListingCard extends StatelessWidget {
   const ListingCard({
@@ -56,27 +56,9 @@ class ListingCard extends StatelessWidget {
                   Positioned(
                     top: AppSpacing.xs,
                     right: AppSpacing.xs,
-                    child: IconButton(
-                      tooltip: ListingCopy.favoriteComingSoon,
-                      onPressed: () {
-                        if (!isSignedIn) {
-                          showSignInPrompt(
-                            context,
-                            returnPath: GoRouterState.of(context).uri
-                                .toString(),
-                          );
-                          return;
-                        }
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(ListingCopy.favoritesComingSoon),
-                          ),
-                        );
-                      },
-                      style: IconButton.styleFrom(
-                        backgroundColor: colors.surface.withValues(alpha: 0.9),
-                      ),
-                      icon: const Icon(Icons.favorite_border),
+                    child: FavoriteButton(
+                      listing: listing,
+                      isSignedIn: isSignedIn,
                     ),
                   ),
                   if (listing.ownerVerified)

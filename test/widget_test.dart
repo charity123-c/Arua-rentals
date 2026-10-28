@@ -11,6 +11,7 @@ import 'package:arua_rentals/features/auth/data/auth_repository.dart';
 import 'package:arua_rentals/features/auth/presentation/auth_providers.dart';
 import 'package:arua_rentals/features/auth/presentation/login_screen.dart';
 import 'package:arua_rentals/features/auth/presentation/register_screen.dart';
+import 'package:arua_rentals/features/chat/presentation/chat_providers.dart';
 import 'package:arua_rentals/features/listings/data/app_config.dart';
 import 'package:arua_rentals/features/listings/data/listing.dart';
 import 'package:arua_rentals/features/listings/data/listings_repository.dart';
@@ -211,6 +212,7 @@ ProviderContainer _signedInContainer(AppUser user) => ProviderContainer(
   overrides: [
     authStateProvider.overrideWith((ref) => Stream.value(_TestAuthUser())),
     currentAppUserProvider.overrideWith((ref) async => user),
+    totalUnreadChatsProvider.overrideWithValue(0),
     appConfigProvider.overrideWith(
       (ref) async => const AppConfig(categories: [], areas: []),
     ),

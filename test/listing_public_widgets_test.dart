@@ -21,13 +21,18 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: SizedBox(
-              width: 320,
-              height: 376,
-              child: ListingCard(listing: _listing(ownerVerified: true)),
+      ProviderScope(
+        overrides: [
+          authStateProvider.overrideWith((ref) => Stream.value(null)),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 320,
+                height: 376,
+                child: ListingCard(listing: _listing(ownerVerified: true)),
+              ),
             ),
           ),
         ),

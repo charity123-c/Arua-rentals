@@ -6,11 +6,14 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/ugx_formatter.dart';
+import '../../../core/errors/app_exception.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_network_image.dart';
 import '../../auth/data/app_user.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../chat/presentation/chat_providers.dart';
+import '../../favorites/presentation/favorite_button.dart';
 import '../data/listing.dart';
 import 'listing_copy.dart';
 import 'listings_providers.dart';
@@ -102,6 +105,7 @@ class ListingDetailScreen extends ConsumerWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
+          actions: [FavoriteButton(listing: listing, isSignedIn: isSignedIn)],
         ),
         body: SafeArea(
           bottom: false,
@@ -210,7 +214,7 @@ class ListingDetailScreen extends ConsumerWidget {
                               ),
                             ),
                           _OwnerSummary(listing: listing),
-                          _ratingSummary(context, listing, isSignedIn),
+                          _ratingSummary(context, listing),
                           if (listing.createdAt != null)
                             Padding(
                               padding: const EdgeInsets.only(
@@ -233,7 +237,7 @@ class ListingDetailScreen extends ConsumerWidget {
           ),
         ),
         bottomNavigationBar: _ContactBar(
-          phone: listing.ownerPhone,
+          listing: listing,
           isSignedIn: isSignedIn,
           returnPath: GoRouterState.of(context).uri.toString(),
         ),
@@ -241,11 +245,7 @@ class ListingDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _ratingSummary(
-    BuildContext context,
-    Listing listing,
-    bool isSignedIn,
-  ) {
+  Widget _ratingSummary(BuildContext context, Listing listing) {
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.lg),
       child: Wrap(
@@ -266,22 +266,11 @@ class ListingDetailScreen extends ConsumerWidget {
                 ),
               ],
             ),
-          TextButton.icon(
-            onPressed: () {
-              if (!isSignedIn) {
-                showSignInPrompt(
-                  context,
-                  returnPath: GoRouterState.of(context).uri.toString(),
-                );
-                return;
-              }
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text(ListingCopy.ratingsComingSoon)),
-              );
-            },
-            icon: const Icon(Icons.star_outline),
-            label: const Text(ListingCopy.rateListing),
-          ),
+          if (listing.ratingCount == 0)
+            Text(
+              ListingCopy.noRatingsYet,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
         ],
       ),
     );
@@ -469,21 +458,23 @@ class _OwnerSummary extends StatelessWidget {
   );
 }
 
-class _ContactBar extends StatelessWidget {
+class _ContactBar extends ConsumerWidget {
   const _ContactBar({
-    required this.phone,
+    required this.listing,
     required this.isSignedIn,
     required this.returnPath,
   });
 
-  final String phone;
+  final Listing listing;
   final bool isSignedIn;
   final String returnPath;
 
   @override
-  Widget build(BuildContext context) {
-    final digits = _normalizedPhoneDigits(phone);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final digits = _normalizedPhoneDigits(listing.ownerPhone);
     final available = digits != null;
+    final currentUid = ref.watch(authStateProvider).asData?.value?.uid;
+    final cannotChatWithSelf = currentUid == listing.ownerId;
     return SafeArea(
       top: false,
       child: Padding(
@@ -528,18 +519,20 @@ class _ContactBar extends StatelessWidget {
             const SizedBox(width: AppSpacing.xs),
             Expanded(
               child: Tooltip(
-                message: ListingCopy.comingSoon,
+                message: cannotChatWithSelf
+                    ? ListingCopy.cannotChatWithSelf
+                    : ListingCopy.chat,
                 child: OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(
                       AppLayout.minimumTapTarget,
                     ),
                   ),
-                  onPressed: isSignedIn
-                      ? () => ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text(ListingCopy.comingSoon)),
-                        )
-                      : () => showSignInPrompt(context, returnPath: returnPath),
+                  onPressed: !isSignedIn
+                      ? () => showSignInPrompt(context, returnPath: returnPath)
+                      : cannotChatWithSelf
+                      ? null
+                      : () => _openChat(context, ref),
                   icon: const Icon(Icons.forum_outlined),
                   label: const Text(ListingCopy.chat),
                 ),
@@ -549,6 +542,27 @@ class _ContactBar extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _openChat(BuildContext context, WidgetRef ref) async {
+    final authUser = ref.read(authStateProvider).asData?.value;
+    final appUser = ref.read(currentAppUserProvider).asData?.value;
+    if (authUser == null || appUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(ListingCopy.chatAccountError)),
+      );
+      return;
+    }
+    try {
+      final roomId = await ref
+          .read(chatRepositoryProvider)
+          .openRoom(currentUid: authUser.uid, listing: listing);
+      if (context.mounted) context.go('/chat/$roomId');
+    } on AppException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.message)));
+    }
   }
 
   String? _normalizedPhoneDigits(String value) {

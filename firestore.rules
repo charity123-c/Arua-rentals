@@ -6,7 +6,9 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return signedIn() && request.auth.token.admin == true;
+      return signedIn()
+        && request.auth.token.keys().hasAny(['admin'])
+        && request.auth.token.admin == true;
     }
 
     function isOwner(uid) {
@@ -15,6 +17,102 @@ service cloud.firestore {
 
     function userPath(uid) {
       return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function chatRoomPath(roomId) {
+      return /databases/$(database)/documents/chat_rooms/$(roomId);
+    }
+
+    function chatMessagePath(roomId, messageId) {
+      return /databases/$(database)/documents/chat_rooms/$(roomId)/messages/$(messageId);
+    }
+
+    function isChatParticipant(roomId) {
+      return signedIn()
+        && get(chatRoomPath(roomId)).data.participants.hasAny([request.auth.uid]);
+    }
+
+    function validChatRoom(roomId) {
+      let participants = request.resource.data.participants;
+      let listingId = request.resource.data.listingId;
+      return request.resource.data.keys().hasOnly([
+          'participants',
+          'listingId',
+          'listingTitle',
+          'listingThumb',
+          'lastMessage',
+          'lastMessageId',
+          'lastMessageAt',
+          'unreadCount',
+          'createdAt'
+        ])
+        && participants is list
+        && participants.size() == 2
+        && participants[0] is string
+        && participants[1] is string
+        && participants[0] != participants[1]
+        && request.auth.uid in participants
+        && listingId is string
+        && roomId == participants[0] + '_' + participants[1] + '_' + listingId
+        && exists(/databases/$(database)/documents/listings/$(listingId))
+        && get(/databases/$(database)/documents/listings/$(listingId)).data.status == 'approved'
+        && get(/databases/$(database)/documents/listings/$(listingId)).data.ownerId in participants
+        && request.resource.data.listingTitle is string
+        && request.resource.data.listingTitle.size() > 0
+        && request.resource.data.listingTitle.size() <= 200
+        && request.resource.data.listingThumb is string
+        && request.resource.data.listingThumb.size() <= 2048
+        && request.resource.data.lastMessage == ''
+        && request.resource.data.lastMessageId == ''
+        && request.resource.data.lastMessageAt is timestamp
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.unreadCount is map
+        && request.resource.data.unreadCount.keys().hasAll(participants)
+        && request.resource.data.unreadCount.keys().size() == 2
+        && request.resource.data.unreadCount[participants[0]] == 0
+        && request.resource.data.unreadCount[participants[1]] == 0;
+    }
+
+    function validUnreadReset(roomId) {
+      let oldRoom = resource.data;
+      let newRoom = request.resource.data;
+      let recipient = oldRoom.participants[0] == request.auth.uid
+        ? oldRoom.participants[1]
+        : oldRoom.participants[0];
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['unreadCount'])
+        && newRoom.unreadCount.keys().hasAll(oldRoom.participants)
+        && newRoom.unreadCount.keys().size() == 2
+        && newRoom.unreadCount[request.auth.uid] == 0
+        && newRoom.unreadCount[recipient] == oldRoom.unreadCount[recipient]
+        && newRoom.lastMessage == oldRoom.lastMessage
+        && newRoom.lastMessageId == oldRoom.lastMessageId
+        && newRoom.lastMessageAt == oldRoom.lastMessageAt;
+    }
+
+    function validChatSend(roomId) {
+      let oldRoom = resource.data;
+      let newRoom = request.resource.data;
+      let recipient = oldRoom.participants[0] == request.auth.uid
+        ? oldRoom.participants[1]
+        : oldRoom.participants[0];
+      let messagePath = chatMessagePath(roomId, newRoom.lastMessageId);
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['lastMessage', 'lastMessageId', 'lastMessageAt', 'unreadCount'])
+        && newRoom.lastMessage is string
+        && newRoom.lastMessage.size() > 0
+        && newRoom.lastMessage.size() <= 1000
+        && newRoom.lastMessageAt == request.time
+        && newRoom.unreadCount.keys().hasAll(oldRoom.participants)
+        && newRoom.unreadCount.keys().size() == 2
+        && newRoom.unreadCount[request.auth.uid] == oldRoom.unreadCount[request.auth.uid]
+        && newRoom.unreadCount[recipient] == oldRoom.unreadCount[recipient] + 1
+        && newRoom.lastMessageId is string
+        && newRoom.lastMessageId.size() > 0
+        && existsAfter(messagePath)
+        && getAfter(messagePath).data.senderId == request.auth.uid
+        && getAfter(messagePath).data.text == newRoom.lastMessage
+        && getAfter(messagePath).data.createdAt == request.time;
     }
 
     function validUserRole(role) {
@@ -183,28 +281,82 @@ service cloud.firestore {
         );
     }
 
+    match /favorites/{uid}/items/{listingId} {
+      allow read: if isOwner(uid);
+
+      allow create, update: if isOwner(uid)
+        && request.resource.data.keys().hasOnly([
+          'listingId',
+          'title',
+          'thumbnailUrl',
+          'priceUgx',
+          'area',
+          'createdAt'
+        ])
+        && request.resource.data.listingId == listingId
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.thumbnailUrl is string
+        && request.resource.data.thumbnailUrl.size() <= 2048
+        && request.resource.data.priceUgx is int
+        && request.resource.data.priceUgx > 0
+        && request.resource.data.area is string
+        && request.resource.data.area.size() <= 100
+        && request.resource.data.createdAt is timestamp;
+
+      allow delete: if isOwner(uid);
+    }
+
+    match /chat_rooms/{roomId} {
+      allow read: if isChatParticipant(roomId);
+      allow create: if signedIn() && validChatRoom(roomId);
+      allow update: if isChatParticipant(roomId)
+        && (
+          validUnreadReset(roomId)
+          || validChatSend(roomId)
+        );
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isChatParticipant(roomId);
+        allow create: if isChatParticipant(roomId)
+          && request.resource.data.keys().hasOnly([
+            'senderId',
+            'text',
+            'createdAt'
+          ])
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 1000
+          && request.resource.data.createdAt == request.time
+          && getAfter(chatRoomPath(roomId)).data.lastMessageId == messageId
+          && getAfter(chatRoomPath(roomId)).data.lastMessage
+            == request.resource.data.text;
+        allow update, delete: if false;
+      }
+    }
+
     match /listings/{listingId} {
       allow read: if isAdmin()
         || resource.data.status == 'approved'
         || (signedIn() && resource.data.ownerId == request.auth.uid);
 
       allow create: if signedIn()
-        && request.resource.data.ownerId == request.auth.uid
         && (
-          (
-            request.resource.data.status == 'pending'
-            && (
-              isAdmin()
-              || get(userPath(request.auth.uid)).data.role in ['landlord', 'provider']
-            )
-          )
-          || (request.resource.data.status == 'approved' && isAdmin())
+          (isAdmin()
+            && request.resource.data.status in ['approved', 'pending'])
+          || (!isAdmin()
+            && request.resource.data.ownerId == request.auth.uid
+            && request.resource.data.status == 'pending'
+            && get(userPath(request.auth.uid)).data.role in ['landlord', 'provider'])
         )
         && validListingData(request.resource.data)
         && (
           isAdmin()
           || request.resource.data.ownerVerified
-            == get(userPath(request.auth.uid)).data.isVerified
+            == get(userPath(request.resource.data.ownerId)).data.isVerified
         )
         && (
           isAdmin()

@@ -71,25 +71,54 @@ abstract final class ListingCopy {
   static const priceHighToLow = 'Price: high to low';
   static const clearFilters = 'Clear filters';
   static const noListingsMatch = 'No listings match your search';
-  static const publicListingsError = 'Unable to load listings. Please try again.';
+  static const publicListingsError =
+      'Unable to load listings. Please try again.';
   static const listingNotAvailable = 'This listing is not available.';
   static const backToHome = 'Back to home';
   static const posted = 'Posted';
-  static const comingSoon = 'Coming soon';
   static const call = 'Call';
   static const whatsapp = 'WhatsApp';
   static const chat = 'Chat';
+  static const inbox = 'Messages';
+  static const chatInboxError = 'Unable to load messages.';
+  static const noChatsTitle = 'No conversations yet';
+  static const noChatsMessage =
+      'Start a conversation from a listing to find it here.';
+  static const startConversation = 'Start the conversation';
+  static const chatRoomError = 'This conversation is not available.';
+  static const chatAccountError = 'Unable to load your account for messaging.';
+  static const chatMessagesError = 'Unable to load messages.';
+  static const chatHistoryRetry = 'Could not load message history. Retry';
+  static const loadEarlierMessages = 'Load earlier messages';
+  static const chatReadFailed = 'Unable to update this conversation.';
+  static const chatSendFailed = 'Unable to send the message.';
+  static const messageFailedRetry = 'Message not sent.';
+  static const typeMessage = 'Type a message';
+  static const sendingMessage = 'Sending message';
+  static const sendMessage = 'Send message';
+  static const messageSent = 'Sent';
+  static const cannotChatWithSelf = 'You cannot chat with yourself.';
   static const listingDetails = 'Listing details';
   static const bedroomsLabel = 'Bedrooms';
   static const bathroomsLabel = 'Bathrooms';
   static const ratingLabel = 'rating';
+  static const noRatingsYet = 'No ratings yet.';
   static const profile = 'Profile';
   static const login = 'Log in';
   static const register = 'Register';
   static const logout = 'Log out';
   static const myListings = 'My listings';
   static const admin = 'Admin';
-  static const favoriteComingSoon = 'Favorites are coming soon';
+  static const saveFavorite = 'Save listing';
+  static const removeFavorite = 'Remove saved listing';
+  static const favorites = 'Favorites';
+  static const noFavoritesTitle = 'No saved listings yet';
+  static const noFavoritesMessage =
+      'Listings you save will appear here for easy access.';
+  static const favoritesError = 'Unable to load saved listings.';
+  static const loadMoreFavoritesFailed = 'Could not load more saved listings.';
+  static const favoriteFailed = 'Unable to update saved listings.';
+  static const listingUnavailable = 'Listing no longer available';
   static const actionFailed = 'Unable to open this link.';
   static const previewPublicSite = 'Preview public site';
   static const verified = 'Verified';
@@ -115,8 +144,6 @@ abstract final class ListingCopy {
   static const signInPromptMessage =
       'Create an account or log in to use this feature.';
   static const rateListing = 'Rate this listing';
-  static const favoritesComingSoon = 'Favorites are coming soon.';
-  static const ratingsComingSoon = 'Ratings are coming soon.';
   static const heroHeadline = 'Find a place to call home in Arua';
   static const heroSubtext =
       'Browse trusted rentals and local services, then contact providers directly.';

@@ -17,12 +17,17 @@ class ListingPage {
 enum ListingSort { newest, priceLowToHigh, priceHighToLow }
 
 class ListingsRepository {
-  ListingsRepository({FirebaseFirestore? firestore, FirebaseAuth? firebaseAuth})
+  ListingsRepository({
+    FirebaseFirestore? firestore,
+    FirebaseAuth? firebaseAuth,
+    this._adminClaimResolver,
+  })
     : _firestore = firestore ?? FirebaseFirestore.instance,
       _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _firebaseAuth;
+  final Future<bool> Function(User user)? _adminClaimResolver;
 
   CollectionReference<Map<String, dynamic>> get _listings =>
       _firestore.collection(CollectionNames.listings);
@@ -50,9 +55,7 @@ class ListingsRepository {
         id: listing.id.isEmpty ? _listings.doc().id : listing.id,
         ownerId: effectiveOwnerId,
         ownerName: _stringField(profileData, 'name'),
-        ownerPhone: listing.ownerPhone.trim().isEmpty
-            ? _stringField(profileData, 'phone')
-            : listing.ownerPhone,
+        ownerPhone: _stringField(profileData, 'phone'),
         ownerVerified: _boolField(profileData, 'isVerified'),
       );
       final status = isAdmin ? ListingStatus.approved : ListingStatus.pending;
@@ -312,6 +315,8 @@ class ListingsRepository {
   }
 
   Future<bool> _hasAdminClaim(User user) async {
+    final resolver = _adminClaimResolver;
+    if (resolver != null) return resolver(user);
     try {
       final result = await user.getIdTokenResult(true);
       return result.claims?['admin'] == true;
